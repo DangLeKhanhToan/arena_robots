@@ -6,7 +6,7 @@
 brings up a nav stack + a `task_server` node in a given namespace. The
 `task_server` advertises arena IDL action servers, one per `TaskKind` the
 chosen bringup supports. Clients send goals to those endpoints; the
-`task_server` translates them to the underlying nav stack. `task_generator`
+`task_server` translates them to the underlying nav stack. The env node
 is one consumer of this surface; any ROS 2 process or CLI can be another.
 
 ## Launch a robot standalone
@@ -94,7 +94,7 @@ surface for agents. `python3 -m arena_mcp ls robots` lists its tools.
 
 Live tools take `env_id` and `robot`, both optional when the runtime has one
 env and the env one robot. A goal is one phase appended to the robot's episode
-task through the task generator's `runtime/submit_task`, the same submission an
+task through the env node's `runtime/submit_task`, the same submission an
 rviz goal makes: goto targets are in the env map frame, the robot's adapter
 dispatches the action, and the episode judges the phase. Goals and timed drives
 run as jobs: the job follows the last submitted phase (a cross-level goto runs

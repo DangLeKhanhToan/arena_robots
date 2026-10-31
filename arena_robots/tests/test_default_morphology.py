@@ -19,7 +19,7 @@ ROBOT_NAMES = sorted(p.name.removesuffix("_default.urdf") for p in GOLDEN_DIR.gl
 
 
 class TestEffectiveSensorsMatchModelParams:
-    """task_generator's robots_manager reads ``model_params.sensors`` at runtime, so a
+    """The env node's robots_manager reads ``model_params.sensors`` at runtime, so a
     robot's default-request sensor resolution must reproduce it field-for-field,
     order-sensitive."""
 

@@ -30,7 +30,7 @@ def _load_goto_pose_drl() -> type:
 #     namespace: str          # optional, default ""
 #     use_sim_time: bool      # optional, default true
 #
-# The DrlAdapter (task_generator adapters/mobile/drl.py) owns subprocess lifecycle;
+# The DrlAdapter (arena_runtime env/adapters/mobile/drl.py) owns subprocess lifecycle;
 # this bringup spawns an optional global planner stack (nav2 planner_server-only by default).
 
 
