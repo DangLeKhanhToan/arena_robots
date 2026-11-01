@@ -20,7 +20,7 @@ local_costmap:
 global_costmap:
   global_costmap:
     ros__parameters:
-      plugins: ["static_layer", "obstacle_layer", "social_cost_layer", "inflation_layer", "mask_overlay_layer"]
+      plugins: ["static_layer", "obstacle_layer", "mask_overlay_layer", "social_cost_layer", "inflation_layer"]
       social_cost_layer:
         plugin: "arena_social_cost_layer/SocialCostLayer"
         enabled: true
