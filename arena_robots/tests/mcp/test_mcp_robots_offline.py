@@ -10,7 +10,7 @@ import yaml
 
 pytest.importorskip("arena_mcp")
 
-from arena_mcp.core import ToolError
+from arena_mcp.core import ToolError, cli
 from arena_robots import mcp
 from arena_robots.Robot import RobotView
 
@@ -116,8 +116,8 @@ def test_live_sensors_name_the_robot_when_its_parts_do_not_resolve():
 @pytest.fixture
 def fake_arena(tmp_path):
     arena = Path(os.environ["ARENA_DIR"]) if "ARENA_DIR" in os.environ else None
-    if arena is None or not (arena / "_meta" / "arena_cli").is_dir():
-        pytest.skip("needs ARENA_DIR with the arena CLI")
+    if not cli.sourced() or arena is None or not (arena / "_meta" / "arena_cli").is_dir():
+        pytest.skip("needs a shell that sourced arena")
     (tmp_path / "_meta").symlink_to(arena / "_meta")
     urdf = tmp_path / "arena_robots" / "arena_robots" / "robots" / "ghost" / "urdf"
     urdf.mkdir(parents=True)
@@ -134,8 +134,8 @@ def test_uri_check_turns_the_cli_failure_listing_into_findings(fake_arena):
 
 
 def test_check_of_jackal_runs_the_cli_and_reports_no_definition_errors():
-    if "ARENA_DIR" not in os.environ:
-        pytest.skip("needs ARENA_DIR for arena feature robots check")
+    if not cli.sourced():
+        pytest.skip("needs a shell that sourced arena")
     report = mcp.robots_check("jackal")
     assert report["models"] == ["jackal"]
     assert [finding for finding in report["findings"] if finding["check"] != "mesh_uri"] == []

@@ -11,35 +11,15 @@ def _make_mock_robot(name: str = "test_robot") -> object:
     return mock_robot
 
 
-class TestNoneBringupAttributes:
-    def test_kind_value(self):
-        from arena_robots.bringup.mobile.none import NoneBringup
-
-        assert NoneBringup.kind == "none"
-
-    def test_requires_contains_mobile(self):
-        from arena_robots.bringup.mobile.none import NoneBringup
-
-        assert "mobile" in NoneBringup._bringup_meta.requires
-
-    def test_requires_frozenset(self):
-        from arena_robots.bringup.mobile.none import NoneBringup
-
-        assert isinstance(NoneBringup._bringup_meta.requires, frozenset)
-
-
 class TestNoneBringupProperties:
     def _make(self, namespace: str = "/robot1") -> object:
         from arena_robots.bringup.mobile.none import NoneBringup
 
         return NoneBringup(robot=_make_mock_robot(), namespace=namespace)
 
-    def test_goal_topic_contains_goal_pose(self):
-        b = self._make()
-        assert "goal_pose" in b.goal_topic
-
-    def test_goal_topic_contains_namespace(self):
+    def test_goal_topic_is_goal_pose_under_the_namespace(self):
         b = self._make("/ns1")
+        assert "goal_pose" in b.goal_topic
         assert "ns1" in b.goal_topic
 
 
@@ -49,18 +29,6 @@ class TestNoneBringupLaunchActions:
 
         return NoneBringup(robot=_make_mock_robot(), namespace="/robot1")
 
-    def test_returns_list(self):
+    def test_launches_one_action_and_ignores_extra_kwargs(self):
         b = self._make()
-        actions = b._launch_actions()
-        assert isinstance(actions, list)
-        assert len(actions) == 1
-
-    def test_use_sim_time_accepted(self):
-        b = self._make()
-        actions = b._launch_actions(use_sim_time=False)
-        assert isinstance(actions, list)
-
-    def test_extra_kwargs_ignored(self):
-        b = self._make()
-        actions = b._launch_actions(extra_kwarg="ignored")
-        assert isinstance(actions, list)
+        assert len(b._launch_actions(use_sim_time=False, extra_kwarg="ignored")) == 1

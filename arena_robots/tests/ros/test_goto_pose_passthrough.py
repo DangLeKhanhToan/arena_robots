@@ -2,161 +2,99 @@
 
 from __future__ import annotations
 
-import asyncio
-from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+import pytest
+
+from conftest import until
 
 
-def _make_goal_handle(target_pose=None):
-    if target_pose is None:
-        try:
-            from geometry_msgs.msg import PoseStamped
-
-            target_pose = PoseStamped()
-        except ImportError:
-            target_pose = MagicMock()
-    goal = MagicMock()
-    goal.target = target_pose
-    handle = MagicMock()
-    handle.request = goal
-    handle.succeed = MagicMock()
-    return handle
-
-
-def _make_bringup(goal_topic: str = "/robot1/goal_pose") -> object:
-    b = MagicMock()
-    b.goal_topic = goal_topic
-    return b
-
-
-def _make_node():
-    publisher = MagicMock()
-    node = MagicMock()
-    node.create_publisher.return_value = publisher
-    node.get_namespace.return_value = "/env_0/robot1"
-    return node, publisher
-
-
-class TestPassthroughHandlerInit:
-    def test_creates_publisher(self):
+class TestPassthroughHandler:
+    def _serve(self, rig):
         from arena_robots.task_server_handlers.goto_pose._passthrough import GotoPoseHandlerNone
 
-        node, publisher = _make_node()
-        bringup = _make_bringup("/ns/goal_pose")
-        handler = GotoPoseHandlerNone(bringup, tf_buffer=None, node=node)
-        node.create_publisher.assert_called_once()
-        call_args = node.create_publisher.call_args
-        assert "/ns/goal_pose" in str(call_args) or call_args[0][1] == "/ns/goal_pose"
+        return rig.listen(rig.serve(GotoPoseHandlerNone))
 
+    def test_publishes_the_target_on_the_goal_topic(self, goto_rig):
+        received = self._serve(goto_rig)
+        goto_rig.result(goto_rig.send(1.5))
+        until(lambda: bool(received), "published goal")
+        assert received[0].pose.position.x == pytest.approx(1.5)
 
-class TestPassthroughHandlerExecute:
-    def _make_handler(self, goal_topic: str = "/ns/goal_pose"):
-        from arena_robots.task_server_handlers.goto_pose._passthrough import GotoPoseHandlerNone
+    def test_succeeds_at_once_with_the_target_as_final_pose(self, goto_rig):
+        from action_msgs.msg import GoalStatus
 
-        node, publisher = _make_node()
-        bringup = _make_bringup(goal_topic)
-        handler = GotoPoseHandlerNone(bringup, tf_buffer=None, node=node)
-        return handler, publisher
-
-    def test_publishes_target(self):
-        handler, publisher = self._make_handler()
-        goal_handle = _make_goal_handle()
-        asyncio.run(handler.execute(goal_handle))
-        publisher.publish.assert_called_once_with(goal_handle.request.target)
-
-    def test_calls_succeed(self):
-        handler, publisher = self._make_handler()
-        goal_handle = _make_goal_handle()
-        asyncio.run(handler.execute(goal_handle))
-        goal_handle.succeed.assert_called_once()
-
-    def test_result_status_succeeded(self):
         from arena_robots_msgs.action import GotoPose
 
-        handler, publisher = self._make_handler()
-        goal_handle = _make_goal_handle()
-        result = asyncio.run(handler.execute(goal_handle))
-        assert result.status == GotoPose.Result.STATUS_SUCCEEDED
-
-    def test_result_final_pose_is_target(self):
-        try:
-            from geometry_msgs.msg import PoseStamped
-
-            target = PoseStamped()
-        except ImportError:
-            target = MagicMock()
-
-        from arena_robots.task_server_handlers.goto_pose._passthrough import GotoPoseHandlerNone
-
-        node, _ = _make_node()
-        bringup = _make_bringup()
-        handler = GotoPoseHandlerNone(bringup, tf_buffer=None, node=node)
-        goal = MagicMock()
-        goal.target = target
-        goal_handle = MagicMock()
-        goal_handle.request = goal
-        result = asyncio.run(handler.execute(goal_handle))
-        assert result.final_pose is target
+        self._serve(goto_rig)
+        wrapped = goto_rig.result(goto_rig.send(1.5))
+        assert wrapped.status == GoalStatus.STATUS_SUCCEEDED
+        assert wrapped.result.status == GotoPose.Result.STATUS_SUCCEEDED
+        assert wrapped.result.final_pose.pose.position.x == pytest.approx(1.5)
 
 
 class TestGoalWindowHandlerExternal:
-    def _make_handler(self, transform):
+    def _serve(self, rig):
+        import tf2_ros
+
         from arena_robots.task_server_handlers.goto_pose._passthrough import GotoPoseHandlerExternal
 
-        node, publisher = _make_node()
-        bringup = _make_bringup("/ext/goal_pose")
-        bringup.frame = "env_0/"
-        bringup.robot.model_params.base_frame = "base_link"
-        tf_buffer = MagicMock()
-        tf_buffer.lookup_transform.return_value = transform
-        handler = GotoPoseHandlerExternal(bringup, tf_buffer=tf_buffer, node=node)
-        return handler, publisher
+        buffer = tf2_ros.Buffer()
+        return buffer, rig.listen(rig.serve(GotoPoseHandlerExternal, tf_buffer=buffer))
 
-    def _make_transform(self, x: float = 0.0, y: float = 0.0):
-        from geometry_msgs.msg import TransformStamped
+    def test_publishes_the_target_on_the_goal_topic(self, goto_rig):
+        buffer, received = self._serve(goto_rig)
+        goto_rig.robot_at(buffer, 1.6)
+        goto_rig.result(goto_rig.send(1.5, pose_tolerance=0.5))
+        until(lambda: bool(received), "published goal")
+        assert received[0].pose.position.x == pytest.approx(1.5)
 
-        t = TransformStamped()
-        t.transform.translation.x = x
-        t.transform.translation.y = y
-        t.transform.rotation.w = 1.0
-        return t
+    def test_succeeds_within_tolerance_with_the_measured_pose(self, goto_rig):
+        from action_msgs.msg import GoalStatus
 
-    def _make_goal_handle(self, *, pose_tolerance: float = 0.5):
-        goal_handle = _make_goal_handle()
-        goal_handle.is_active = True
-        goal_handle.is_cancel_requested = False
-        goal_handle.request.pose_tolerance = pose_tolerance
-        goal_handle.request.yaw_tolerance = 0.0
-        return goal_handle
-
-    def test_publishes_target(self):
-        handler, publisher = self._make_handler(self._make_transform())
-        goal_handle = self._make_goal_handle()
-        asyncio.run(handler.execute(goal_handle))
-        publisher.publish.assert_called_once_with(goal_handle.request.target)
-
-    def test_succeeds_once_within_tolerance(self):
         from arena_robots_msgs.action import GotoPose
 
-        handler, _ = self._make_handler(self._make_transform(0.1, 0.0))
-        goal_handle = self._make_goal_handle()
-        result = asyncio.run(handler.execute(goal_handle))
-        goal_handle.succeed.assert_called_once()
-        assert result.status == GotoPose.Result.STATUS_SUCCEEDED
+        buffer, _ = self._serve(goto_rig)
+        goto_rig.robot_at(buffer, 0.1)
+        wrapped = goto_rig.result(goto_rig.send(pose_tolerance=0.5))
+        assert wrapped.status == GoalStatus.STATUS_SUCCEEDED
+        assert wrapped.result.status == GotoPose.Result.STATUS_SUCCEEDED
+        assert wrapped.result.final_pose.pose.position.x == pytest.approx(0.1)
 
-    def test_final_pose_is_measured_pose(self):
-        handler, _ = self._make_handler(self._make_transform(0.1, 0.0))
-        goal_handle = self._make_goal_handle()
-        result = asyncio.run(handler.execute(goal_handle))
-        assert result.final_pose.pose.position.x == 0.1
-
-    def test_cancel_requested_returns_canceled(self):
+    def test_stays_open_until_the_robot_is_within_tolerance(self, goto_rig):
         from arena_robots_msgs.action import GotoPose
 
-        handler, _ = self._make_handler(self._make_transform())
-        goal_handle = self._make_goal_handle()
-        goal_handle.is_cancel_requested = True
-        result = asyncio.run(handler.execute(goal_handle))
-        goal_handle.canceled.assert_called_once()
-        goal_handle.succeed.assert_not_called()
-        assert result.status == GotoPose.Result.STATUS_CANCELED
+        buffer, _ = self._serve(goto_rig)
+        goto_rig.robot_at(buffer, 5.0)
+        handle = goto_rig.send(pose_tolerance=0.5)
+        until(lambda: bool(goto_rig.feedback), "distance feedback")
+        assert goto_rig.feedback[0].feedback.distance_remaining == pytest.approx(5.0)
+        until(lambda: len(goto_rig.feedback) >= 2, "a second poll while far from the goal")
+        goto_rig.robot_at(buffer, 0.2)
+        assert goto_rig.result(handle).result.status == GotoPose.Result.STATUS_SUCCEEDED
+
+    def test_cancel_cancels_the_open_goal(self, goto_rig):
+        from action_msgs.msg import GoalStatus
+
+        from arena_robots_msgs.action import GotoPose
+
+        buffer, _ = self._serve(goto_rig)
+        goto_rig.robot_at(buffer, 5.0)
+        handle = goto_rig.send(pose_tolerance=0.5)
+        until(lambda: bool(goto_rig.feedback), "distance feedback")
+        goto_rig.cancel(handle)
+        wrapped = goto_rig.result(handle)
+        assert wrapped.status == GoalStatus.STATUS_CANCELED
+        assert wrapped.result.status == GotoPose.Result.STATUS_CANCELED
+
+    def test_a_new_goal_supersedes_the_open_one(self, goto_rig):
+        from arena_robots_msgs.action import GotoPose
+
+        buffer, _ = self._serve(goto_rig)
+        goto_rig.robot_at(buffer, 5.0)
+        first = goto_rig.send(pose_tolerance=0.5)
+        until(lambda: bool(goto_rig.feedback), "distance feedback")
+        second = goto_rig.send(pose_tolerance=0.5)
+        wrapped = goto_rig.result(first)
+        assert wrapped.result.status == GotoPose.Result.STATUS_CANCELED
+        assert wrapped.result.reason == "superseded by new goal"
+        goto_rig.cancel(second)
+        goto_rig.result(second)

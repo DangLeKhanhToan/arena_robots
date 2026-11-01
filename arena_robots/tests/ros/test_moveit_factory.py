@@ -13,6 +13,19 @@ import pytest
 _XACRO = shutil.which("xacro")
 
 
+class _SrdfLinksExist:
+    def test_every_srdf_link_exists_in_urdf(self, params: dict) -> None:
+        urdf_links = {link.get("name") for link in ET.fromstring(params["robot_description"]).iter("link")}
+        srdf = ET.fromstring(params["robot_description_semantic"])
+        srdf_links: set[str] = set()
+        for chain in (c for g in srdf.iter("group") for c in g.findall("chain")):
+            srdf_links |= {chain.get("base_link", ""), chain.get("tip_link", "")}
+        for dc in srdf.iter("disable_collisions"):
+            srdf_links |= {dc.get("link1", ""), dc.get("link2", "")}
+        srdf_links.discard("")
+        assert not (srdf_links - urdf_links), f"SRDF references links absent from URDF: {sorted(srdf_links - urdf_links)}"
+
+
 class TestSelectArm:
     """`_select_arm` is the pure selection rule shared by `build_moveit_params`;
     it returns the `(key, entry)` pair so callers can render per-placement
@@ -142,7 +155,7 @@ class TestBuildMoveitParamsAllocationMatchesPlus:
 
 
 @pytest.mark.skipif(_XACRO is None, reason="xacro CLI not on PATH; run under the Arena container (bash arena -c pytest)")
-class TestBuildMoveitParamsZeroPrefixChassis:
+class TestBuildMoveitParamsZeroPrefixChassis(_SrdfLinksExist):
     """jackal declares ``prefix: ""`` (no Robotnik robot_ convention). Composing an arm
     onto it must render the SRDF with the SAME empty prefix as the URDF, so the planning
     group's chain and disable_collisions reference links that actually exist in the URDF.
@@ -166,20 +179,9 @@ class TestBuildMoveitParamsZeroPrefixChassis:
             assert not chain.get("base_link", "").startswith("robot_")
             assert not chain.get("tip_link", "").startswith("robot_")
 
-    def test_every_srdf_link_exists_in_urdf(self, params: dict) -> None:
-        urdf_links = {link.get("name") for link in ET.fromstring(params["robot_description"]).iter("link")}
-        srdf = ET.fromstring(params["robot_description_semantic"])
-        srdf_links: set[str] = set()
-        for chain in (c for g in srdf.iter("group") for c in g.findall("chain")):
-            srdf_links |= {chain.get("base_link", ""), chain.get("tip_link", "")}
-        for dc in srdf.iter("disable_collisions"):
-            srdf_links |= {dc.get("link1", ""), dc.get("link2", "")}
-        srdf_links.discard("")
-        assert not (srdf_links - urdf_links), f"SRDF references links absent from URDF: {sorted(srdf_links - urdf_links)}"
-
 
 @pytest.mark.skipif(_XACRO is None, reason="xacro CLI not on PATH; run under the Arena container (bash arena -c pytest)")
-class TestBuildMoveitParamsWithGripper:
+class TestBuildMoveitParamsWithGripper(_SrdfLinksExist):
     """A gripper chained onto the arm's tip (jackal ``top_tool``) merges its
     SRDF fragment into the composed document: gripper group + end_effector + collision
     disables, all referencing links that exist in the wrapper-rendered URDF."""
@@ -228,20 +230,9 @@ class TestBuildMoveitParamsWithGripper:
         ee = next(iter(ET.fromstring(p["robot_description_semantic"]).iter("end_effector")))
         assert ee.get("parent_link") == "env_0/jackal/top_tool0"
 
-    def test_every_srdf_link_exists_in_urdf(self, params: dict) -> None:
-        urdf_links = {link.get("name") for link in ET.fromstring(params["robot_description"]).iter("link")}
-        srdf = ET.fromstring(params["robot_description_semantic"])
-        srdf_links: set[str] = set()
-        for chain in (c for g in srdf.iter("group") for c in g.findall("chain")):
-            srdf_links |= {chain.get("base_link", ""), chain.get("tip_link", "")}
-        for dc in srdf.iter("disable_collisions"):
-            srdf_links |= {dc.get("link1", ""), dc.get("link2", "")}
-        srdf_links.discard("")
-        assert not (srdf_links - urdf_links), f"SRDF references links absent from URDF: {sorted(srdf_links - urdf_links)}"
-
 
 @pytest.mark.skipif(_XACRO is None, reason="xacro CLI not on PATH; run under the Arena container (bash arena -c pytest)")
-class TestBuildMoveitParamsSmallUrComponents:
+class TestBuildMoveitParamsSmallUrComponents(_SrdfLinksExist):
     """ur3e/ur3 resolve through the `arm/ur` family component (catalog `variants:`
     fallback); `${variant}` threads the ur_type into the URDF/config and the per-variant
     joint_limits path. This guards that a family variant with no dedicated dir composes a
@@ -256,14 +247,3 @@ class TestBuildMoveitParamsSmallUrComponents:
         p = build_moveit_params("jackal", tf_prefix="", parts={"arm": [RequestPart(variant=request.param, mount="top")]}, instance="top")
         assert p is not None
         return p
-
-    def test_every_srdf_link_exists_in_urdf(self, params: dict) -> None:
-        urdf_links = {link.get("name") for link in ET.fromstring(params["robot_description"]).iter("link")}
-        srdf = ET.fromstring(params["robot_description_semantic"])
-        srdf_links: set[str] = set()
-        for chain in (c for g in srdf.iter("group") for c in g.findall("chain")):
-            srdf_links |= {chain.get("base_link", ""), chain.get("tip_link", "")}
-        for dc in srdf.iter("disable_collisions"):
-            srdf_links |= {dc.get("link1", ""), dc.get("link2", "")}
-        srdf_links.discard("")
-        assert not (srdf_links - urdf_links), f"SRDF references links absent from URDF: {sorted(srdf_links - urdf_links)}"

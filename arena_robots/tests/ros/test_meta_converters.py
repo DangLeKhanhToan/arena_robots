@@ -2,16 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
-
-@pytest.fixture(autouse=True)
-def _ros_gate():
-    try:
-        import rclpy  # noqa: F401
-    except ImportError:
-        pytest.skip("ROS2 not available")
-
 
 class TestBringupMetaRequires:
     def test_string_wraps_to_singleton_not_chars(self):

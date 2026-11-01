@@ -2,38 +2,15 @@
 
 from __future__ import annotations
 
-import asyncio
-from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
-
 import pytest
 
-
-def _make_bringup(native_action_name: str = "/robot1/navigate_to_pose"):
-    b = MagicMock()
-    b.native_action_name = native_action_name
-    return b
+from conftest import until
 
 
-def _make_client(srv_type, *_args, **_kwargs):
-    """The lockstep register client is polled, the parameter client is awaited."""
-    from rcl_interfaces.msg import ParameterType, ParameterValue
-    from rcl_interfaces.srv import GetParameters
+def _handler():
+    from arena_robots.task_server_handlers.goto_pose.nav2 import GotoPoseHandlerNav2
 
-    client = MagicMock()
-    if srv_type is GetParameters:
-        response = GetParameters.Response()
-        response.values = [ParameterValue(type=ParameterType.PARAMETER_DOUBLE, double_value=20.0)]
-        client.call_async = AsyncMock(return_value=response)
-    return client
-
-
-def _make_node():
-    node = MagicMock()
-    node.get_logger.return_value = MagicMock(info=lambda m: None, warn=lambda m: None)
-    node.get_namespace.return_value = "/env_0/robot1"
-    node.create_client.side_effect = _make_client
-    return node
+    return GotoPoseHandlerNav2
 
 
 class TestTranslateNav2Status:
@@ -76,241 +53,96 @@ class TestTranslateNav2Status:
         assert reason
 
 
-class TestGotoPoseHandlerNav2Init:
-    def test_creates_action_client(self):
-        from arena_robots.task_server_handlers.goto_pose.nav2 import GotoPoseHandlerNav2
-
-        bringup = _make_bringup()
-        node = _make_node()
-        with patch("arena_robots.task_server_handlers.goto_pose.nav2.ActionClient") as MockAC:
-            handler = GotoPoseHandlerNav2(bringup, tf_buffer=None, node=node)
-            MockAC.assert_called_once()
-
-
 class TestGotoPoseHandlerNav2Execute:
-    def _make_handler(self, node=None):
-        from arena_robots.task_server_handlers.goto_pose.nav2 import GotoPoseHandlerNav2
-
-        bringup = _make_bringup()
-        if node is None:
-            node = _make_node()
-        with patch("arena_robots.task_server_handlers.goto_pose.nav2.ActionClient"):
-            handler = GotoPoseHandlerNav2(bringup, tf_buffer=None, node=node)
-        return handler
-
-    def _make_goal_handle(self, *, is_active=True, is_cancel_requested=False):
-        try:
-            from geometry_msgs.msg import PoseStamped
-
-            target = PoseStamped()
-        except ImportError:
-            target = MagicMock()
-        goal = MagicMock()
-        goal.target = target
-        gh = MagicMock()
-        gh.request = goal
-        gh.is_active = is_active
-        gh.is_cancel_requested = is_cancel_requested
-        gh.publish_feedback = MagicMock()
-        gh.succeed = MagicMock()
-        gh.canceled = MagicMock()
-        return gh
-
-    def test_not_active_during_server_wait_returns_canceled(self):
-        from arena_robots_msgs.action import GotoPose
-
-        handler = self._make_handler()
-        handler._native_client = MagicMock()
-        handler._native_client.server_is_ready.return_value = False
-
-        goal_handle = self._make_goal_handle(is_active=False)
-        result = asyncio.run(handler.execute(goal_handle))
-        assert result.status == GotoPose.Result.STATUS_CANCELED
-
-    def test_cancel_requested_returns_canceled(self):
-        from arena_robots_msgs.action import GotoPose
-
-        handler = self._make_handler()
-        handler._native_client = MagicMock()
-        handler._native_client.server_is_ready.return_value = True
-
-        goal_handle = self._make_goal_handle(is_cancel_requested=True)
-        result = asyncio.run(handler.execute(goal_handle))
-        assert result.status == GotoPose.Result.STATUS_CANCELED
-        goal_handle.canceled.assert_called_once()
-
-    def test_not_active_after_server_ready_returns_canceled(self):
-        from arena_robots_msgs.action import GotoPose
-
-        handler = self._make_handler()
-        handler._native_client = MagicMock()
-        server_ready_calls = [True]
-
-        def server_is_ready():
-            return True
-
-        handler._native_client.server_is_ready.side_effect = server_is_ready
-
-        call_count = 0
-
-        def is_active_prop():
-            nonlocal call_count
-            call_count += 1
-            return call_count <= 1
-
-        goal_handle = self._make_goal_handle()
-        type(goal_handle).is_active = property(lambda self: not call_count > 0)
-
-        goal_handle2 = MagicMock()
-        goal_handle2.is_active = False
-        goal_handle2.is_cancel_requested = False
-        goal_handle2.request = MagicMock()
-        from geometry_msgs.msg import PoseStamped
-
-        goal_handle2.request.target = PoseStamped()
-        goal_handle2.publish_feedback = MagicMock()
-
-        result = asyncio.run(handler.execute(goal_handle2))
-        assert result.status == GotoPose.Result.STATUS_CANCELED
-
-    def test_nav2_goal_accepted_and_succeeded(self):
+    def test_goal_terminated_while_nav2_is_down_returns_canceled(self, goto_rig):
         from action_msgs.msg import GoalStatus
 
         from arena_robots_msgs.action import GotoPose
 
-        handler = self._make_handler()
-        handler._native_client = MagicMock()
-        handler._native_client.server_is_ready.return_value = True
+        goto_rig.serve(_handler())
+        handle = goto_rig.send()
+        until(lambda: bool(goto_rig.handles), "server goal")
+        goto_rig.handles[0].abort()
+        wrapped = goto_rig.result(handle)
+        assert wrapped.status == GoalStatus.STATUS_ABORTED
+        assert wrapped.result.status == GotoPose.Result.STATUS_CANCELED
+        assert goto_rig.registrations == []
 
-        nav2_result = MagicMock()
-        from geometry_msgs.msg import PoseStamped
-
-        nav2_result.final_pose = PoseStamped()
-        wrapped = MagicMock()
-        wrapped.status = GoalStatus.STATUS_SUCCEEDED
-        wrapped.result = nav2_result
-
-        nav2_gh = MagicMock()
-        nav2_gh.accepted = True
-        nav2_gh.get_result_async = AsyncMock(return_value=wrapped)
-
-        send_future = asyncio.get_event_loop().create_future() if False else AsyncMock(return_value=nav2_gh)
-        handler._native_client.send_goal_async = send_future
-
-        goal_handle = self._make_goal_handle(is_active=True)
-        result = asyncio.run(handler.execute(goal_handle))
-        assert result.status == GotoPose.Result.STATUS_SUCCEEDED
-        goal_handle.succeed.assert_called_once()
-
-    def test_nav2_goal_rejected_retries(self):
+    def test_cancel_reaches_nav2_and_cancels_the_goal(self, goto_rig):
         from action_msgs.msg import GoalStatus
 
         from arena_robots_msgs.action import GotoPose
 
-        handler = self._make_handler()
-        handler._native_client = MagicMock()
-        handler._native_client.server_is_ready.return_value = True
+        nav2 = goto_rig.nav2(hold=True)
+        goto_rig.serve(_handler())
+        handle = goto_rig.send()
+        until(lambda: nav2.received == 1, "nav2 goal")
+        goto_rig.cancel(handle)
+        wrapped = goto_rig.result(handle)
+        assert nav2.canceled == 1
+        assert wrapped.status == GoalStatus.STATUS_CANCELED
+        assert wrapped.result.status == GotoPose.Result.STATUS_CANCELED
 
-        nav2_result = MagicMock()
-        from geometry_msgs.msg import PoseStamped
+    def test_goal_terminated_during_navigation_returns_canceled(self, goto_rig):
+        from arena_robots_msgs.action import GotoPose
 
-        nav2_result.final_pose = PoseStamped()
-        wrapped = MagicMock()
-        wrapped.status = GoalStatus.STATUS_SUCCEEDED
-        wrapped.result = nav2_result
+        nav2 = goto_rig.nav2(hold=True)
+        goto_rig.serve(_handler())
+        handle = goto_rig.send()
+        until(lambda: nav2.received == 1 and bool(goto_rig.handles), "nav2 goal")
+        goto_rig.handles[0].abort()
+        nav2.holding = False
+        wrapped = goto_rig.result(handle)
+        assert wrapped.result.status == GotoPose.Result.STATUS_CANCELED
+        assert wrapped.result.reason == "goal preempted by new submit_task"
 
-        accepted_gh = MagicMock()
-        accepted_gh.accepted = True
-        accepted_gh.get_result_async = AsyncMock(return_value=wrapped)
-
-        rejected_gh = MagicMock()
-        rejected_gh.accepted = False
-
-        call_count = [0]
-
-        async def mock_send_goal(goal, **kwargs):
-            call_count[0] += 1
-            if call_count[0] == 1:
-                return rejected_gh
-            return accepted_gh
-
-        handler._native_client.send_goal_async = mock_send_goal
-
-        destroyed = []
-
-        async def mock_sleep(node, t, **kw):
-            pass
-
-        with patch("arena_robots.task_server_handlers.goto_pose.nav2._executor_sleep", mock_sleep):
-            goal_handle = self._make_goal_handle(is_active=True)
-            result = asyncio.run(handler.execute(goal_handle))
-        assert call_count[0] == 2
-        assert result.status == GotoPose.Result.STATUS_SUCCEEDED
-
-    def test_feedback_translation(self):
+    def test_nav2_success_succeeds_the_goal(self, goto_rig):
         from action_msgs.msg import GoalStatus
+        from geometry_msgs.msg import PoseStamped
 
         from arena_robots_msgs.action import GotoPose
-        from geometry_msgs.msg import PoseStamped
 
-        handler = self._make_handler()
-        handler._native_client = MagicMock()
-        handler._native_client.server_is_ready.return_value = True
+        goto_rig.nav2()
+        goto_rig.serve(_handler())
+        wrapped = goto_rig.result(goto_rig.send())
+        assert wrapped.status == GoalStatus.STATUS_SUCCEEDED
+        assert wrapped.result.status == GotoPose.Result.STATUS_SUCCEEDED
+        assert wrapped.result.final_pose == PoseStamped()
 
-        nav2_result = MagicMock()
-        nav2_result.final_pose = PoseStamped()
-        wrapped = MagicMock()
-        wrapped.status = GoalStatus.STATUS_SUCCEEDED
-        wrapped.result = nav2_result
-
-        feedback_callbacks = []
-
-        async def mock_send_goal(goal, feedback_callback=None, **kwargs):
-            if feedback_callback:
-                feedback_callbacks.append(feedback_callback)
-                fb_inner = MagicMock()
-                fb_inner.current_pose = PoseStamped()
-                fb_inner.distance_remaining = 1.5
-                eta = MagicMock()
-                eta.sec = 3
-                eta.nanosec = 0
-                fb_inner.estimated_time_remaining = eta
-                fb_msg = MagicMock()
-                fb_msg.feedback = fb_inner
-                feedback_callback(fb_msg)
-            nav2_gh = MagicMock()
-            nav2_gh.accepted = True
-            nav2_gh.get_result_async = AsyncMock(return_value=wrapped)
-            return nav2_gh
-
-        handler._native_client.send_goal_async = mock_send_goal
-
-        goal_handle = self._make_goal_handle()
-        asyncio.run(handler.execute(goal_handle))
-        goal_handle.publish_feedback.assert_called()
-        fb_arg = goal_handle.publish_feedback.call_args[0][0]
-        assert isinstance(fb_arg, GotoPose.Feedback)
-        assert fb_arg.distance_remaining == pytest.approx(1.5)
-
-    def test_final_pose_fallback_when_none(self):
-        from action_msgs.msg import GoalStatus
-
+    def test_rejected_goal_is_sent_again(self, goto_rig):
         from arena_robots_msgs.action import GotoPose
-        from geometry_msgs.msg import PoseStamped
 
-        handler = self._make_handler()
-        handler._native_client = MagicMock()
-        handler._native_client.server_is_ready.return_value = True
+        nav2 = goto_rig.nav2(reject_first=1)
+        goto_rig.serve(_handler())
+        wrapped = goto_rig.result(goto_rig.send())
+        assert nav2.received == 2
+        assert wrapped.result.status == GotoPose.Result.STATUS_SUCCEEDED
 
-        wrapped = MagicMock()
-        wrapped.status = GoalStatus.STATUS_SUCCEEDED
-        wrapped.result = None
+    def test_aborted_goal_is_replanned(self, goto_rig):
+        from arena_robots_msgs.action import GotoPose
 
-        nav2_gh = MagicMock()
-        nav2_gh.accepted = True
-        nav2_gh.get_result_async = AsyncMock(return_value=wrapped)
-        handler._native_client.send_goal_async = AsyncMock(return_value=nav2_gh)
+        nav2 = goto_rig.nav2(outcomes=("abort", "succeed"))
+        goto_rig.serve(_handler())
+        wrapped = goto_rig.result(goto_rig.send())
+        assert nav2.received == 2
+        assert wrapped.result.status == GotoPose.Result.STATUS_SUCCEEDED
 
-        goal_handle = self._make_goal_handle()
-        result = asyncio.run(handler.execute(goal_handle))
-        assert isinstance(result.final_pose, PoseStamped)
+    def test_nav2_feedback_is_translated(self, goto_rig):
+        nav2 = goto_rig.nav2(hold=True, distance=1.5)
+        goto_rig.serve(_handler())
+        handle = goto_rig.send()
+        until(lambda: bool(goto_rig.feedback), "translated feedback")
+        nav2.holding = False
+        goto_rig.result(handle)
+        feedback = goto_rig.feedback[0].feedback
+        assert feedback.distance_remaining == pytest.approx(1.5)
+        assert feedback.eta_seconds == pytest.approx(3.0)
+
+    def test_beat_is_registered_for_the_goal_and_released_after_it(self, goto_rig):
+        goto_rig.nav2()
+        goto_rig.serve(_handler())
+        goto_rig.result(goto_rig.send())
+        until(lambda: len(goto_rig.registrations) == 2, "beat release")
+        acquired, released = goto_rig.registrations
+        assert [(channel.hard, channel.period_s) for channel in acquired] == [(True, pytest.approx(0.1))]
+        assert released == []
