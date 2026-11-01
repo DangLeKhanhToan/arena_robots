@@ -64,6 +64,8 @@ class TestGripperComponentSpec:
         assert spec.caps["joint"] == f"${{prefix}}${{mount}}_{KNUCKLE}"
         assert spec.caps["controller"] == "${mount}_controller"
         assert spec.caps["moveit"]["srdf"]["path"] == "components/gripper/robotiq_2f_85/srdf/robotiq_2f_85.srdf.xacro"
+        assert spec.caps["positions"] == {"open": 0.0, "close": 0.8}
+        assert spec.caps["max_effort"] == 50.0
 
 
 def _jackal_gripper_resolved() -> tuple[object, object]:
@@ -117,6 +119,34 @@ class TestGripperChainsOntoArmTip:
         assert grippers is not None and set(grippers) == {"top_tool"}
         assert grippers["top_tool"].joint == f"top_tool_{KNUCKLE}"
         assert grippers["top_tool"].controller == "top_tool_controller"
+        assert grippers["top_tool"].positions == {"open": 0.0, "close": 0.8}
+        assert grippers["top_tool"].max_effort == 50.0
+
+
+class TestRbkairosGripperMount:
+    @pytest.fixture(scope="class")
+    def placed(self) -> tuple[object, object]:
+        view = RobotIdentifier("rbkairos").resolve_sync()
+        assert view.assembly is not None
+        request, cleared_sockets, cleared_types = build_request(view.assembly, {"arm_mount": ["arm/ur5e"], "gripper_mount": ["gripper/robotiq_2f_85"]})
+        return view, resolve(view.assembly, request, cleared_sockets=cleared_sockets, cleared_types=cleared_types)
+
+    def test_gripper_attaches_to_the_arm_tool0(self, placed: tuple[object, object]) -> None:
+        view, resolved = placed
+        wrapper = render_wrapper_xacro(view, resolved, catalog=Catalog(root=COMPONENTS_ROOT))
+        assert '<xacro:robotiq_gripper' in wrapper
+        assert 'parent="$(arg prefix)arm_tool0"' in wrapper
+
+    def test_gripper_caps_carry_the_controller_and_positions(self, placed: tuple[object, object]) -> None:
+        from arena_robots.caps import RobotCaps
+
+        _, resolved = placed
+        rc = RobotCaps(caps_dir=Path("/dev/null"), resolved=resolved, catalog=Catalog(root=COMPONENTS_ROOT), prefix="robot_")
+        assert rc.gripper is not None and set(rc.gripper) == {"gripper_mount"}
+        gripper = rc.gripper["gripper_mount"]
+        assert gripper.joint == f"robot_gripper_{KNUCKLE}"
+        assert gripper.controller == "gripper_controller"
+        assert (gripper.positions, gripper.max_effort) == ({"open": 0.0, "close": 0.8}, 50.0)
 
 
 @pytest.mark.skipif(_XACRO is None, reason="xacro CLI not on PATH; run under the Arena container (bash arena -c pytest)")

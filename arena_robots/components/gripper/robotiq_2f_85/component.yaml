@@ -46,6 +46,7 @@ caps:
   positions:
     open: 0.0
     close: 0.8
+  max_effort: 50.0
   moveit:
     srdf:
       package: arena_robots
