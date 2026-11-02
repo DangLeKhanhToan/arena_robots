@@ -220,7 +220,12 @@ gripper:
   arm: arm                 # key into caps/arm.yaml
   joint: arm_gripper_joint
   controller: arm_gripper_controller
+  positions: {open: 0.0, close: 0.8}
+  max_effort: 50.0
 ```
+
+`positions` holds the joint values of `open` and `close`, `max_effort` the effort every gripper
+command carries. Gripper components carry the same block under `caps:`.
 
 #### Adapter sub-blocks are namespaced, not dispatch
 

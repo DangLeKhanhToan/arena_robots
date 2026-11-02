@@ -211,7 +211,7 @@ class TestInstanceSpecs:
 
         caps = tmp_path / "caps"
         caps.mkdir()
-        (caps / "gripper.yaml").write_text(yaml.dump({"gripper1": {"arm": "my_arm", "joint": "gripper_joint", "controller": "gripper_ctrl"}}))
+        (caps / "gripper.yaml").write_text(yaml.dump({"gripper1": {"arm": "my_arm", "joint": "gripper_joint", "controller": "gripper_ctrl", "positions": {"open": 0, "close": 0.8}, "max_effort": 20}}))
         rc = RobotCaps(caps_dir=caps)
         grippers = rc.gripper
         assert "gripper1" in grippers
@@ -220,6 +220,8 @@ class TestInstanceSpecs:
         assert g.arm == "my_arm"
         assert g.joint == "gripper_joint"
         assert g.controller == "gripper_ctrl"
+        assert g.positions == {"open": 0.0, "close": 0.8}
+        assert g.max_effort == 20.0
 
     def test_gripper_arm_none_when_absent(self, tmp_path: Path):
         from arena_robots.caps import RobotCaps
@@ -239,6 +241,18 @@ class TestInstanceSpecs:
         rc = RobotCaps(caps_dir=caps)
         with pytest.raises(ValueError, match="missing 'joint'"):
             rc.gripper["g"].joint
+
+    def test_gripper_missing_positions_or_effort_raises(self, tmp_path: Path):
+        from arena_robots.caps import RobotCaps
+
+        caps = tmp_path / "caps"
+        caps.mkdir()
+        (caps / "gripper.yaml").write_text(yaml.dump({"g": {"joint": "j", "controller": "c"}}))
+        rc = RobotCaps(caps_dir=caps)
+        with pytest.raises(ValueError, match="missing 'positions'"):
+            rc.gripper["g"].positions
+        with pytest.raises(ValueError, match="missing 'max_effort'"):
+            rc.gripper["g"].max_effort
 
 
 class TestRobotCapsAllocationDerived:
