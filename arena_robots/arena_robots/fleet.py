@@ -14,7 +14,7 @@ import yaml
 from arena_robots.Robot import RobotIdentifier
 
 if typing.TYPE_CHECKING:
-    from task_generator_msgs.msg import RobotFleet
+    from arena_runtime_msgs.msg import RobotFleet
 
 
 def _join_frame(*parts: str) -> str:

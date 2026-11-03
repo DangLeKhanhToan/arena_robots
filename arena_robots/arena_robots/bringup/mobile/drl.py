@@ -84,7 +84,7 @@ class DrlBringup(Bringup):
         use_sim_time: bool = True,
         frame: str = "",
         global_planner: str = "nav2/navfn",
-        task_generator_node: str = "",
+        arena_env_node: str = "",
         **_: object,
     ) -> list[Action]:
         from arena_planners.resolver import (  # noqa: PLC0415
@@ -116,7 +116,7 @@ class DrlBringup(Bringup):
                     "use_sim_time": str(use_sim_time).lower(),
                     "frame": frame,
                     "kind": kind,
-                    "task_generator_node": task_generator_node,
+                    "arena_env_node": arena_env_node,
                 }.items(),
             )
         ]

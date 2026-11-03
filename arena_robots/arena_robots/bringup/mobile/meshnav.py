@@ -180,7 +180,7 @@ class MeshNavBringup(Bringup):
         *,
         use_sim_time: bool = True,
         frame: str = "",
-        task_generator_node: str = "",
+        arena_env_node: str = "",
         env_namespace: str = "",
         sensors: list[SensorSpec] | None = None,
         mesh_file: str = "",

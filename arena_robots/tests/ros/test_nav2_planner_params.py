@@ -36,7 +36,7 @@ def _planner_params(robot: str, global_planner: str) -> dict:
             "inter_planner": "empty",
             "planner_only": "true",
             "train_mode": "true",
-            "task_generator_node": "",
+            "arena_env_node": "",
             "env_namespace": "",
             "sensors_json": "",
             "params_overlay": "",

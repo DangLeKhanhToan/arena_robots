@@ -35,7 +35,7 @@ def generate_launch_description():
     LaunchArgument.auto_append(ld_items)
 
     robot = LaunchArgument('robot')
-    task_generator_node = LaunchArgument('task_generator_node', default_value='')
+    arena_env_node = LaunchArgument('arena_env_node', default_value='')
     env_namespace = LaunchArgument('env_namespace', default_value='')
     namespace = LaunchArgument('namespace')
     frame = LaunchArgument('frame')
@@ -83,7 +83,7 @@ def generate_launch_description():
             {
                 'frame': frame.substitution,
                 'base_frame': YAMLRetrieveSubstitution(YAMLFileSubstitution(model_params_path), 'base_frame'),
-                **task_generator_node.dict,
+                **arena_env_node.dict,
                 **env_namespace.dict,
                 'namespace': namespace.substitution,
                 # In train_mode the RL environment publishes cmd_vel directly.
@@ -132,7 +132,7 @@ def generate_launch_description():
     ]
 
     def launch_setup(context, *args, **kwargs):
-        tgn = task_generator_node.substitution.perform(context)
+        tgn = arena_env_node.substitution.perform(context)
         is_planner_only = planner_only.substitution.perform(context).lower() == 'true'
         remappings: list[tuple[SomeSubstitutionsType, SomeSubstitutionsType]] = [
             ('map_server', '/map_server'),

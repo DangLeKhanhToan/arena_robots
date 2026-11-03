@@ -8,7 +8,7 @@ from arena_robots.Sensor import SensorSpec, SensorType
 
 def _params(robot: str, mesh_file: str = "/tmp/arena_meshnav/abc.ply") -> tuple[MeshNavBringup, dict]:
     view = RobotIdentifier(robot).resolve_sync()
-    bringup = MeshNavBringup(view, f"/arena/env_0/task_generator_node/{robot}")
+    bringup = MeshNavBringup(view, f"/arena/env_0/arena_env_node/{robot}")
     return bringup, bringup.parameters(
         odom_frame=f"env_0/{robot}/odom",
         base_frame=f"env_0/{robot}/base",
@@ -43,7 +43,7 @@ def _bringup(robot: str, meshnav: dict | None = None) -> MeshNavBringup:
     view = RobotIdentifier(robot).resolve_sync()
     if meshnav is not None:
         view.caps.mobile.raw["meshnav"] = meshnav
-    return MeshNavBringup(view, f"/arena/env_0/task_generator_node/{robot}")
+    return MeshNavBringup(view, f"/arena/env_0/arena_env_node/{robot}")
 
 
 def _obstacle_params(bringup: MeshNavBringup, sensors: list[SensorSpec] | None = None) -> dict:
@@ -59,7 +59,7 @@ def _obstacle_params(bringup: MeshNavBringup, sensors: list[SensorSpec] | None =
 def test_the_obstacle_layer_reads_the_filtered_cloud_by_default():
     bringup, params = _params("jackal")
     obstacle = params["mesh_map"]["obstacle"]
-    assert obstacle["topic"] == "/arena/env_0/task_generator_node/jackal/meshnav/obstacles"
+    assert obstacle["topic"] == "/arena/env_0/arena_env_node/jackal/meshnav/obstacles"
     assert obstacle["robot_height"] > bringup.settings["robot_height"]
     assert obstacle["axis_frame"] == "env_0/jackal/odom"
     assert obstacle["max_obstacle_dist"] >= 1.0e6
@@ -84,11 +84,11 @@ def test_the_obstacle_layer_is_off_when_the_robot_turns_it_off():
 
 def test_the_obstacle_node_reads_one_namespaced_stream_per_range_sensor_preferring_clouds():
     params = _obstacle_params(_bringup("jackal"))
-    assert params["pointcloud_topics"] == ["/arena/env_0/task_generator_node/jackal/lidar/points"]
+    assert params["pointcloud_topics"] == ["/arena/env_0/arena_env_node/jackal/lidar/points"]
     assert "laserscan_topics" not in params
     scan_only = [spec for spec in _bringup("jackal").robot.model_params.sensors if spec.type == SensorType.LASERSCAN]
     params = _obstacle_params(_bringup("jackal"), scan_only)
-    assert params["laserscan_topics"] == ["/arena/env_0/task_generator_node/jackal/lidar"]
+    assert params["laserscan_topics"] == ["/arena/env_0/arena_env_node/jackal/lidar"]
     assert "pointcloud_topics" not in params
 
 
@@ -161,4 +161,4 @@ def test_goals_go_to_the_dijkstra_planner_unless_the_robot_picks_cvp():
     assert set(params["planners"]) == {"dijkstra", "cvp"}
     view = RobotIdentifier("jackal").resolve_sync()
     view.caps.mobile.raw["meshnav"] = {"planner": "cvp"}
-    assert MeshNavBringup(view, "/arena/env_0/task_generator_node/jackal").planner == "cvp"
+    assert MeshNavBringup(view, "/arena/env_0/arena_env_node/jackal").planner == "cvp"

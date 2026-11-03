@@ -17,10 +17,10 @@ from arena_mcp.core.jobs import RUNNING
 
 if TYPE_CHECKING:
     from arena_robots_msgs.action import GotoPose, PlayGesture, ReachPose
+    from arena_runtime_msgs.msg import SemanticSnapshot
     from arena_simulation_setup.shared.task import TaskPhase
     from geometry_msgs.msg import PoseStamped
     from sensor_msgs.msg import LaserScan
-    from task_generator_msgs.msg import SemanticSnapshot
 
     from arena_mcp.core import JobHandle
     from arena_robots.assembly import RequestPart
@@ -499,9 +499,9 @@ def _phase_outcome(snapshot: SemanticSnapshot | None, robot: str, index: int) ->
 
 async def _phase_job[FeedbackT](kind: str, title: str, env_id: int | None, entry: dict[str, Any], task_kind: TaskKind, phase: TaskPhase, convert: Callable[[FeedbackT], dict[str, Any]]) -> dict[str, Any]:
     """Submit one phase to the robot's episode task and follow it as a job until the episode judges it."""
+    from arena_runtime_msgs.msg import EpisodeRecord, SemanticSnapshot
+    from arena_runtime_msgs.srv import SubmitTask
     from arena_simulation_setup.shared.task import TaskRequest
-    from task_generator_msgs.msg import EpisodeRecord, SemanticSnapshot
-    from task_generator_msgs.srv import SubmitTask
 
     from arena_robots.task_kinds import action_type, endpoint
 
