@@ -179,9 +179,11 @@ def compile_sensors_to_stvl(
 
 def compile_sensors_to_collision_monitor(
     sensors: list[SensorSpec],
+    geometry: typing.Mapping[str, SensorGeometry],
     *,
     pointcloud_min_height: float = 0.1,
     pointcloud_max_height: float = 2.0,
+    min_range_margin: float = 0.01,
 ) -> dict[str, dict[str, typing.Any]]:
     """Compile SensorSpec entries into collision_monitor source shape.
 
@@ -195,12 +197,16 @@ def compile_sensors_to_collision_monitor(
         if type_str == SensorType.LASERSCAN.value:
             out[spec.name] = {"type": "scan", "topic": spec.topic}
         elif type_str == SensorType.POINTCLOUD.value:
-            out[spec.name] = {
+            source: dict[str, typing.Any] = {
                 "type": "pointcloud",
                 "topic": spec.topic,
                 "min_height": pointcloud_min_height,
                 "max_height": pointcloud_max_height,
             }
+            shape = geometry.get(spec.sensor or spec.name)
+            if shape is not None and shape.min_range > 0.0:
+                source["min_range"] = shape.min_range + min_range_margin
+            out[spec.name] = source
     return out
 
 
@@ -286,7 +292,7 @@ class SensorsDerivedYAML(YAMLFileSubstitution):
             extra_per_source={'observation_persistence': g_persistence},
         )
 
-        collision_sources = compile_sensors_to_collision_monitor(sensors)
+        collision_sources = compile_sensors_to_collision_monitor(sensors, geometry)
 
         derived = {
             'observation_sources_string': ' '.join(local_sources.keys()),
