@@ -17,7 +17,7 @@ def generate_launch_description() -> LaunchDescription:
     LaunchArgument.auto_append(ld_items)
 
     robot = LaunchArgument('robot')
-    task_generator_node = LaunchArgument('task_generator_node', default_value='')
+    arena_env_node = LaunchArgument('arena_env_node', default_value='')
     namespace = LaunchArgument('namespace')
     frame = LaunchArgument('frame')
     use_sim_time = LaunchArgument('use_sim_time')
@@ -40,7 +40,7 @@ def generate_launch_description() -> LaunchDescription:
             'inter_planner': 'empty',
             'train_mode': 'true',
             'planner_only': 'true',
-            'task_generator_node': task_generator_node.substitution,
+            'arena_env_node': arena_env_node.substitution,
         }.items(),
     )
 

@@ -182,7 +182,7 @@ def build_moveit_params(robot_name: str, tf_prefix: str = "", parts: dict[str, l
     ``parts`` is the robot's morphology request (allocation-derived
     caps); ``None``/``{}`` resolves defaults only. Both current callers
     (moveit.launch.py, rviz_config.py) run across a launch/process boundary
-    from the task_generator entity that holds the real request and can't
+    from the env node that holds the real request and can't
     supply it yet, so they get defaults.
 
     ``instance`` selects which arm cap instance to build for (dict key from

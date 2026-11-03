@@ -25,8 +25,8 @@ from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import Image, LaserScan
-from task_generator_msgs.msg import EpisodeRecord, RobotCap, RobotDescriptor, RobotFleet, RobotState, SemanticEntityState, SemanticSnapshot
-from task_generator_msgs.srv import SubmitTask
+from arena_runtime_msgs.msg import EpisodeRecord, RobotCap, RobotDescriptor, RobotFleet, RobotState, SemanticEntityState, SemanticSnapshot
+from arena_runtime_msgs.srv import SubmitTask
 
 from arena_mcp.core import JOBS, ROS, ToolError, fleet
 from arena_mcp.core.jobs import CANCELLED, FAILED, SUCCEEDED
@@ -36,7 +36,7 @@ from arena_robots.Sensor import resolve_topic
 from arena_simulation_setup.shared.task import GoToPhase, ReachPhase, TaskRequest
 
 ENV = 7
-TG = f"/arena/env_{ENV}/task_generator_node"
+TG = f"/arena/env_{ENV}/arena_env_node"
 JACKAL = f"{TG}/jackal"
 KAIROS = f"{TG}/kairos"
 UPPER_LEVEL_Y = 50.0

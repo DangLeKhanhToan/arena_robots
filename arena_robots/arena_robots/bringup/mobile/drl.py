@@ -30,7 +30,7 @@ def _load_goto_pose_drl() -> type:
 #     namespace: str          # optional, default ""
 #     use_sim_time: bool      # optional, default true
 #
-# The DrlAdapter (task_generator adapters/mobile/drl.py) owns subprocess lifecycle;
+# The DrlAdapter (arena_runtime env/adapters/mobile/drl.py) owns subprocess lifecycle;
 # this bringup spawns an optional global planner stack (nav2 planner_server-only by default).
 
 
@@ -84,7 +84,7 @@ class DrlBringup(Bringup):
         use_sim_time: bool = True,
         frame: str = "",
         global_planner: str = "nav2/navfn",
-        task_generator_node: str = "",
+        arena_env_node: str = "",
         **_: object,
     ) -> list[Action]:
         from arena_planners.resolver import (  # noqa: PLC0415
@@ -116,7 +116,7 @@ class DrlBringup(Bringup):
                     "use_sim_time": str(use_sim_time).lower(),
                     "frame": frame,
                     "kind": kind,
-                    "task_generator_node": task_generator_node,
+                    "arena_env_node": arena_env_node,
                 }.items(),
             )
         ]

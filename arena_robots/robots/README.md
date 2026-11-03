@@ -306,7 +306,7 @@ change preference.
 
 Requests (`robot:=name[lidar=x,...]`) resolve against this file with replace-on-touch
 semantics; see the grammar section in
-`task_generator/task_generator/manager/README.md`.
+`arena_runtime/arena_runtime/arena_runtime/env/README.md`.
 
 A sensor that is physically present but deliberately left unbridged (e.g. a GPS/navsat
 mast) stays inline in the robot's own xacro; it gets no mount or component entry here.

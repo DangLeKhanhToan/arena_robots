@@ -18,7 +18,7 @@ that `(TaskKind, bringup_kind)` pair.
 | `task_server_handlers/<kind>/<bringup>.py` | the `TaskHandler` implementation for that `(kind, bringup)` pair |
 | `bringup/<cap>/<kind>.py` | declares `task_handlers: ClassVar[dict[TaskKind, Callable[[], type]]]` mapping each supported `TaskKind` to a zero-arg loader for the handler class (lazy msgs imports) |
 | `arena_robots_msgs/action/<Kind>.action` | the IDL the action type comes from |
-| `clients/<kind>.py` | optional Python client wrapper used by `task_generator` and standalone drivers |
+| `clients/<kind>.py` | optional Python client wrapper used by the env node and standalone drivers |
 
 ## Adding a new task kind
 
@@ -83,7 +83,7 @@ custom cancel handling; the base returns `CancelResponse.ACCEPT`.
 ### 4. (Optional) Ship a Python client
 
 Mirror `clients/goto_pose.py` as `clients/follow_path.py`. Clients are not
-required (any consumer can talk to the raw action endpoint), but `task_generator`
+required (any consumer can talk to the raw action endpoint), but the env node
 and [DRIVING.md](../../../DRIVING.md) examples use them.
 
 ### 5. Wire into a `Bringup`
@@ -113,7 +113,7 @@ entry.
 
 ## Design invariants
 
-- **`TaskKind` is closed.** The enum is the sole allowlist; `task_generator`,
+- **`TaskKind` is closed.** The enum is the sole allowlist; the env node,
   the `task_server`, and clients all key off it. Don't parametrise the set by
   config.
 - **Handler ownership lives on the `Bringup`.** The bringup is the single

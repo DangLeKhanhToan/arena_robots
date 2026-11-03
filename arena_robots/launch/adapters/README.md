@@ -15,11 +15,11 @@ Internals of `arena_robots.bringup.nav2.Nav2Bringup`. Instantiates a full nav2
 stack (map server, AMCL, planner, controller, bt_navigator, lifecycle manager)
 in the given namespace. Accepts launch arguments for planner selection
 (`global_planner`, `local_planner`, `inter_planner`), sim time, costmap frame,
-and an optional `task_generator_node` name for map topic remapping (empty
+and an optional `arena_env_node` name for map topic remapping (empty
 string = no remap, which is the standalone default). The companion
 `env_namespace` arg (the env-root namespace, e.g. `/arena/env_0`) is
 plumbed through identically and is used for env-intrinsic topics that do
-not live under `task_generator_node`, such as `door_mask` for
+not live under `arena_env_node`, such as `door_mask` for
 `nav2_mask_overlay_layer`. Planner selection is
 typically driven from
 [cap-scoped overrides](../../../../arena_bringup/BRINGUP.md#cap-scoped-overrides)
