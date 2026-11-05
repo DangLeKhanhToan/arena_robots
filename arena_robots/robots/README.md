@@ -74,8 +74,9 @@ Adapters declare `requires: frozenset[str]` via `@BringupMeta.attach(requires=fr
 | `mobile` | `caps/mobile.yaml` | **flat** (singleton) | drivable chassis (wheeled / tracked / omni) |
 | `arm` | `caps/arm.yaml` | **dict** (named instances) | serial manipulator with an IK-solvable tip |
 | `lift` | `caps/lift.yaml` | **dict** (named instances) | prismatic vertical positioner (Ewellix column, torso lift, scissor) |
+| `gripper` | `caps/gripper.yaml` | **dict** (named instances) | end effector with one actuated joint (`joint`, `controller`, `positions`, `max_effort`, optional `arm`) |
 
-Reserved for future: `gripper`, `ptu_head`, `dual_arm`. Continuum arms either
+Reserved for future: `ptu_head`, `dual_arm`. Continuum arms either
 discretize into the serial-chain shape or use a future `kind: continuum`
 variant of `caps/arm.yaml`.
 
@@ -345,8 +346,11 @@ mast) stays inline in the robot's own xacro; it gets no mount or component entry
 Every robot that needs per-robot geometry has a `meshes/` git submodule pinned
 via `.gitmodules`, pointing at `github.com/arena-robots/<name>.git` with
 `update = none`. Running `arena feature robots add <name>` clones it; config
-edits you make under the robot dir stay in the main Arena repo. Robots that
-use upstream geometry (jackal, turtlebot) have no `meshes/` submodule,
+edits you make under the robot dir stay in the main Arena repo. A robot whose
+upstream repo is not a buildable ROS 2 package (p3at, tiago) instead points its
+submodules under `meshes/` at that upstream repo with `sparse =` on the mesh
+directory, and its URDF references `package://arena_robots/robots/<name>/meshes/<path in the upstream repo>`.
+Robots that use upstream geometry (jackal, turtlebot) have no `meshes/` submodule,
 their URDFs reference `package://jackal_description/…` etc., supplied by
 `deps/jackal` or `deps/turtlebot4`.
 

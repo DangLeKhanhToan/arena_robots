@@ -1,0 +1,3 @@
+torso:
+  joint: torso_lift_joint
+  controller: torso_controller

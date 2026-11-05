@@ -1,0 +1,20 @@
+robot_model: "tiago"
+
+power_system:
+  system_voltage_v: 36.0
+  global_drivetrain_efficiency: 0.85
+  heating_coefficient_ch: 0.05
+  battery_capacity_wh: 1440.0
+  drivetrain_damping: 0.05
+  drivetrain_friction: 0.1
+  rolling_resistance_crr: 0.02
+  robot_mass_kg: 70.0
+  wheel_radius_m: 0.0985
+  num_wheels: 2
+
+joint_metrics:
+  topic: "joint_states"
+
+static_power_w:
+  compute_core: 40.0
+  idle_motors: 15.0

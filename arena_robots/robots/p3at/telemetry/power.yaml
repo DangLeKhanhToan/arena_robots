@@ -1,0 +1,20 @@
+robot_model: "p3at"
+
+power_system:
+  system_voltage_v: 12.0
+  global_drivetrain_efficiency: 0.8
+  heating_coefficient_ch: 0.05
+  battery_capacity_wh: 252.0
+  drivetrain_damping: 0.05
+  drivetrain_friction: 0.1
+  rolling_resistance_crr: 0.03
+  robot_mass_kg: 12.0
+  wheel_radius_m: 0.111
+  num_wheels: 4
+
+joint_metrics:
+  topic: "joint_states"
+
+static_power_w:
+  compute_core: 10.0
+  idle_motors: 6.0
