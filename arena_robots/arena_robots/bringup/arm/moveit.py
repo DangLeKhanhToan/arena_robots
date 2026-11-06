@@ -56,8 +56,8 @@ class MoveItArmBringup(Bringup):
         actions: list[Action] = []
         for mount, arm in arms.items():
             mv = arm.raw.get("moveit") or {}
-            if not mv.get("package"):
-                raise ValueError(f"{arm.path}: arm '{arm.name}' missing moveit.package")
+            if not mv.get("package") and not mv.get("srdf"):
+                raise ValueError(f"{arm.path}: arm '{arm.name}' missing moveit.package or moveit.srdf")
             actions.append(
                 IncludeLaunchDescription(
                     PythonLaunchDescriptionSource(
@@ -76,8 +76,6 @@ class MoveItArmBringup(Bringup):
                         "namespace": str(self.arm_namespace(mount)),
                         "frame": frame,
                         "use_sim_time": str(use_sim_time).lower(),
-                        "arm_controller": arm.controller,
-                        "arm_joints_json": json.dumps(list(arm.chain)),
                         "parts_json": json.dumps({t: [{"variant": p.variant, "mount": p.mount} for p in ps] for t, ps in self.parts.items()}),
                         "instance": "" if single else mount,
                     }.items(),

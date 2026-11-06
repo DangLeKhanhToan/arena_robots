@@ -1,0 +1,57 @@
+robot_model: tiago
+base_frame: base_link
+z_offset: 0.0985
+mass:
+  base_kg: 63.8
+sensors:
+  - name: lidar
+    type: laserscan
+    topic: ${namespace}/lidar
+    frame: lidar
+    sensor: gpu_lidar
+  - name: lidar_points
+    type: pointcloud
+    topic: ${namespace}/lidar/points
+    frame: lidar
+    sensor: gpu_lidar
+  - name: head_camera_imu
+    type: imu
+    topic: ${namespace}/head_camera/imu/data
+    frame: head_camera_imu_frame
+    sensor: head_camera_imu
+  - name: head_camera_info
+    type: camera_info
+    topic: ${namespace}/head_camera/camera_info
+    frame: head_camera_rgb_camera_frame
+    sensor: head_camera
+  - name: head_camera_depth
+    type: depth
+    topic: ${namespace}/head_camera/depth_image
+    frame: head_camera_rgb_camera_frame
+    sensor: head_camera
+  - name: head_camera_image
+    type: image
+    topic: ${namespace}/head_camera/image
+    frame: head_camera_rgb_camera_frame
+    sensor: head_camera
+  - name: head_camera_points
+    type: pointcloud
+    topic: ${namespace}/head_camera/points
+    frame: head_camera_rgb_camera_frame
+    sensor: head_camera
+  - name: imu
+    type: imu
+    topic: ${namespace}/imu/data
+    frame: imu_link
+    sensor: imu_sensor
+control:
+  mode: ros2_control
+  config: package://arena_robots/robots/tiago/control.yaml
+  controllers:
+    - joint_state_broadcaster
+    - tiago_velocity_controller
+    - torso_controller
+    - arm_controller
+    - gripper_controller
+  cmd_vel_topic: tiago_velocity_controller/cmd_vel
+  odom_topic: tiago_velocity_controller/odom

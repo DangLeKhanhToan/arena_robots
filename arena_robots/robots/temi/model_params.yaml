@@ -1,0 +1,64 @@
+robot_model: temi
+base_frame: base_link
+z_offset: 0.06
+mass:
+  base_kg: 12.0
+sensors:
+  - name: lidar
+    type: laserscan
+    topic: ${namespace}/lidar
+    frame: lidar
+    sensor: gpu_lidar
+  - name: lidar_points
+    type: pointcloud
+    topic: ${namespace}/lidar/points
+    frame: lidar
+    sensor: gpu_lidar
+  - name: depth_camera_imu
+    type: imu
+    topic: ${namespace}/depth_camera/imu/data
+    frame: depth_camera_imu_frame
+    sensor: depth_camera_imu
+  - name: depth_camera_info
+    type: camera_info
+    topic: ${namespace}/depth_camera/camera_info
+    frame: depth_camera_rgb_camera_frame
+    sensor: depth_camera
+  - name: depth_camera_depth
+    type: depth
+    topic: ${namespace}/depth_camera/depth_image
+    frame: depth_camera_rgb_camera_frame
+    sensor: depth_camera
+  - name: depth_camera_image
+    type: image
+    topic: ${namespace}/depth_camera/image
+    frame: depth_camera_rgb_camera_frame
+    sensor: depth_camera
+  - name: depth_camera_points
+    type: pointcloud
+    topic: ${namespace}/depth_camera/points
+    frame: depth_camera_rgb_camera_frame
+    sensor: depth_camera
+  - name: head_camera_image
+    type: image
+    topic: ${namespace}/head_camera/image
+    frame: head_camera_color_frame
+    sensor: head_camera_color
+  - name: head_camera_info
+    type: camera_info
+    topic: ${namespace}/head_camera/camera_info
+    frame: head_camera_color_frame
+    sensor: head_camera_color
+  - name: imu
+    type: imu
+    topic: ${namespace}/imu/data
+    frame: imu_link
+    sensor: imu_sensor
+control:
+  mode: ros2_control
+  config: package://arena_robots/robots/temi/control.yaml
+  controllers:
+    - joint_state_broadcaster
+    - temi_velocity_controller
+  cmd_vel_topic: temi_velocity_controller/cmd_vel
+  odom_topic: temi_velocity_controller/odom

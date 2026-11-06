@@ -61,7 +61,7 @@ individual bare keys. The only accepted dotted key form is
 `<cap>.adapter: <kind>`, any other dotted key raises. `adapters` values are
 validated against the registered adapter kinds per cap (`mobile`:
 `nav2`, `external`, `manual`, `rosnav_rl`, `drl`, `none`, `test-collision`,
-`arm`: `moveit`, `none`, see
+`arm`: `moveit`, `none`, `lift`: `direct`, `none`, `gripper`: `direct`, `none`, see
 [env/adapters](../../../../arena_runtime/arena_runtime/arena_runtime/env/adapters/README.md)).
 Morphology directives and `frames` are only valid for a robot whose
 `assembly.yaml` defines mounts. Both raise if the model has none.

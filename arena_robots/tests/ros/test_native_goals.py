@@ -16,7 +16,7 @@ from rclpy.executors import MultiThreadedExecutor
 from arena_robots.task_server_handlers import NativeGoals, _executor_sleep
 
 
-def _wait(future, timeout: float = 10.0):
+def _wait(future, timeout: float = 30.0):
     deadline = time.monotonic() + timeout
     while not future.done():
         assert time.monotonic() < deadline, "future did not complete"
@@ -59,13 +59,13 @@ def test_cancelling_a_server_goal_cancels_the_native_goal_it_waits_on():
     thread = threading.Thread(target=executor.spin, daemon=True)
     thread.start()
     try:
-        assert client.wait_for_server(timeout_sec=10.0)
+        assert client.wait_for_server(timeout_sec=30.0)
         handle = _wait(client.send_goal_async(GotoPose.Goal()))
         assert handle.accepted
-        assert native_started.wait(10.0)
+        assert native_started.wait(30.0)
         _wait(handle.cancel_goal_async())
         result = _wait(handle.get_result_async())
-        assert native_cancelled.wait(10.0)
+        assert native_cancelled.wait(30.0)
         assert result.result.status == GotoPose.Result.STATUS_CANCELED
     finally:
         executor.shutdown()

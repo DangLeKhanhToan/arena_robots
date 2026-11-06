@@ -35,7 +35,8 @@ def test_collision_sources_typed_by_sensor():
             _spec("lidar", SensorType.LASERSCAN, "ns/lidar"),
             _spec("rgbd_camera_points", SensorType.POINTCLOUD, "ns/rgbd_camera/points"),
             _spec("rgbd_camera_image", SensorType.IMAGE, "ns/rgbd_camera/image"),
-        ]
+        ],
+        {},
     )
     assert sources["lidar"] == {"type": "scan", "topic": "ns/lidar"}
     assert sources["rgbd_camera_points"] == {
@@ -56,6 +57,12 @@ def _lidar_spec(name: str, sensor: str, *, cloud: bool = True) -> list[SensorSpe
 _LIDAR_3D = SensorGeometry("lidar", 2 * math.pi, -0.2618, 0.2618, 0.08, 12.0)
 _LIDAR_2D = SensorGeometry("lidar", 4.5379, 0.0, 0.0, 0.1, 10.0)
 _CAMERA = SensorGeometry("camera", 1.5184, -0.6, 0.6, 0.105, 8.0)
+
+
+def test_collision_pointcloud_drops_returns_at_sensor_min_range():
+    sources = compile_sensors_to_collision_monitor(_lidar_spec("lidar", "gpu_lidar"), {"gpu_lidar": _LIDAR_3D})
+    assert sources["lidar"] == {"type": "scan", "topic": "ns/lidar"}
+    assert sources["lidar_points"]["min_range"] == pytest.approx(0.09)
 
 
 def _stvl(specs: list[SensorSpec], geometry: dict[str, SensorGeometry], default_range: float) -> dict:

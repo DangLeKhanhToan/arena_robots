@@ -73,3 +73,9 @@ variants: [...]           # family component: variant names this one dir serves,
   server), so only the actuated finger moves until the stack catches up.
   `caps.moveit.srdf` names a fragment merged into the composed SRDF per placement
   (`moveit_factory._gripper_srdf_extras`, context adds `arm` = the carrying arm's stem).
+- **Arm MoveIt blocks**: an arm component's `caps.moveit` carries `planning_group`, `srdf` and
+  `joint_limits` files (xacro/yaml templated on `${prefix}${mount}`, re-keyed per placement by
+  `moveit_factory`) and `args` with `prefix`/`mount`/`parent`. `package` is only set when a vendor
+  MoveIt config package supplies defaults (`arm/ur` names `ur_moveit_config`); `arm/fr3` has none and
+  gets OMPL defaults, a KDL solver on its group and the arm controller mapping from the factory.
+  Franka Hand ships its fragment (`gripper/franka_hand/srdf`) the same way as the Robotiq one.
