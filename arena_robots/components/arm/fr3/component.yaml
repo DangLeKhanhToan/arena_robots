@@ -13,24 +13,31 @@ ros2_control:
     - name: "${prefix}${mount}_fr3_joint1"
       command_interfaces: [position]
       state_interfaces: [position, velocity]
+      initial_value: 0.0
     - name: "${prefix}${mount}_fr3_joint2"
       command_interfaces: [position]
       state_interfaces: [position, velocity]
+      initial_value: -1.5
     - name: "${prefix}${mount}_fr3_joint3"
       command_interfaces: [position]
       state_interfaces: [position, velocity]
+      initial_value: 0.0
     - name: "${prefix}${mount}_fr3_joint4"
       command_interfaces: [position]
       state_interfaces: [position, velocity]
+      initial_value: -2.9
     - name: "${prefix}${mount}_fr3_joint5"
       command_interfaces: [position]
       state_interfaces: [position, velocity]
+      initial_value: 0.0
     - name: "${prefix}${mount}_fr3_joint6"
       command_interfaces: [position]
       state_interfaces: [position, velocity]
+      initial_value: 1.4
     - name: "${prefix}${mount}_fr3_joint7"
       command_interfaces: [position]
       state_interfaces: [position, velocity]
+      initial_value: 0.785
 
 control:
   controller: "${mount}_controller"
@@ -61,6 +68,19 @@ caps:
     - "${prefix}${mount}_fr3_joint6"
     - "${prefix}${mount}_fr3_joint7"
   controller: "${mount}_controller"
+  moveit:
+    planning_group: "${mount}_manipulator"
+    robot_name: fr3
+    srdf:
+      package: arena_robots
+      path: components/arm/fr3/srdf/fr3.srdf.xacro
+    joint_limits:
+      package: arena_robots
+      path: components/arm/fr3/joint_limits/fr3.yaml
+    args:
+      prefix: "${prefix}"
+      mount: "${mount}"
+      parent: "${parent}"
   workspace:
     type: box
     frame: "${prefix}${parent}"
@@ -85,5 +105,32 @@ caps:
         "${prefix}${mount}_fr3_joint5": 0.0
         "${prefix}${mount}_fr3_joint6": 1.571
         "${prefix}${mount}_fr3_joint7": 0.785
+    wave_up:
+      joints:
+        "${prefix}${mount}_fr3_joint1": 0.0
+        "${prefix}${mount}_fr3_joint2": -0.785
+        "${prefix}${mount}_fr3_joint3": 0.0
+        "${prefix}${mount}_fr3_joint4": -1.6
+        "${prefix}${mount}_fr3_joint5": 0.0
+        "${prefix}${mount}_fr3_joint6": 1.2
+        "${prefix}${mount}_fr3_joint7": 0.785
+    wave_l:
+      joints:
+        "${prefix}${mount}_fr3_joint1": 0.0
+        "${prefix}${mount}_fr3_joint2": -0.785
+        "${prefix}${mount}_fr3_joint3": 0.0
+        "${prefix}${mount}_fr3_joint4": -1.6
+        "${prefix}${mount}_fr3_joint5": 0.0
+        "${prefix}${mount}_fr3_joint6": 1.2
+        "${prefix}${mount}_fr3_joint7": 1.385
+    wave_r:
+      joints:
+        "${prefix}${mount}_fr3_joint1": 0.0
+        "${prefix}${mount}_fr3_joint2": -0.785
+        "${prefix}${mount}_fr3_joint3": 0.0
+        "${prefix}${mount}_fr3_joint4": -1.6
+        "${prefix}${mount}_fr3_joint5": 0.0
+        "${prefix}${mount}_fr3_joint6": 1.2
+        "${prefix}${mount}_fr3_joint7": 0.185
 power:
   static_power_w: 50.0

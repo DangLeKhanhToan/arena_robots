@@ -30,5 +30,9 @@ caps:
     open: 0.04
     close: 0.0
   max_effort: 70.0
+  moveit:
+    srdf:
+      package: arena_robots
+      path: components/gripper/franka_hand/srdf/franka_hand.srdf.xacro
 power:
   static_power_w: 3.0

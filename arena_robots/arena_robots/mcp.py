@@ -6,7 +6,7 @@ import re
 import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Any, Protocol, cast
+from typing import TYPE_CHECKING, Annotated, Any, Literal, Protocol, cast
 
 import yaml
 from pydantic import Field
@@ -33,6 +33,7 @@ domain = Domain(
     "robots",
     """Robot models and live robots: catalog, definitions and validation offline, fleet, task actions, velocity commands, pose, sensors, scans, cameras and power in a running env.
     Live tools take env_id and robot, both optional when only one exists (robots_fleet lists them).
+    robots_lift and robots_gripper command the lift and gripper adapters and return the clamped value they sent, without waiting for the joint to arrive.
     robots_goto, robots_reach, robots_gesture and robots_drive return a job: poll jobs_status for feedback, stop with jobs_cancel, which cancels the goal.
     Velocity commands go to <robot_ns>/cmd_vel, the topic the controllers' twist_stamper and flatsim read.""",
     requires=("arena_robots_msgs", "arena_simulation_setup", "ament_index_python"),
@@ -633,6 +634,85 @@ async def robots_gesture(
 
     entry = await _member(env_id, robot)
     return await _phase_job("gesture", f"gesture {entry['name']} {name}", env_id, entry, TaskKind.PLAY_GESTURE, PlayGesturePhase(gesture=name, instance=instance), _arm_feedback)
+
+
+_ACTUATOR_WAIT_S = 2.0
+
+
+def _actuator_spec(entry: dict[str, Any], cap: str, instance: str) -> tuple[str, Any]:
+    if cap not in {item["cap"] for item in entry["caps"]}:
+        raise ToolError(f"robot {entry['name']} has no {cap} cap", hint=f"caps: {', '.join(item['cap'] for item in entry['caps'])}")
+    view = _view(entry["model"])
+    instances = getattr(view.effective_caps(_parts(view, entry["params"])), cap) or {}
+    if not instance:
+        if len(instances) != 1:
+            raise ToolError(f"robot {entry['name']} has {len(instances)} {cap} instances, pass instance", hint=f"instances: {', '.join(sorted(instances))}")
+        instance = next(iter(instances))
+    if instance not in instances:
+        raise ToolError(f"robot {entry['name']} has no {cap} instance {instance!r}", hint=f"instances: {', '.join(sorted(instances))}")
+    return instance, instances[instance]
+
+
+async def _actuate[MsgT](entry: dict[str, Any], cap: str, msg_type: type[MsgT], topic: str, command: MsgT) -> MsgT:
+    """Publish a command and wait for the adapter's applied echo, the clamped value actually sent to the controller."""
+    node = await ROS.node()
+    bound = next((item["adapter"] for item in entry["caps"] if item["cap"] == cap), "none")
+    if node.count_subscribers(topic) == 0:
+        raise ToolError(f"nothing listens on {topic}", hint=f"{cap} adapter of {entry['name']} is {bound!r}, launch with robot.{cap}:=direct")
+    applied = await ROS.cache(msg_type, f"{topic.rsplit('/', 1)[0]}/applied", qos=LATCHED)
+    stale = applied.last
+    await ROS.publish(msg_type, topic, command)
+    deadline = time.monotonic() + _ACTUATOR_WAIT_S
+    while applied.last is stale and time.monotonic() < deadline:
+        await asyncio.sleep(0.05)
+    if applied.last is stale:
+        raise ToolError(f"{cap} adapter of {entry['name']} did not answer within {_ACTUATOR_WAIT_S:.0f} s", hint="system_logs shows the env node's reason")
+    return cast("MsgT", applied.last)
+
+
+@domain.tool()
+async def robots_lift(
+    height: Annotated[float, Field(description="target joint position of the lift in m, clamped to the lift's limits")],
+    env_id: EnvId = None,
+    robot: RobotName = None,
+    instance: Annotated[str, Field(description="lift instance (mount name), empty for the only lift")] = "",
+) -> dict[str, Any]:
+    """Set the height of a robot's lift (torso, column) through its lift adapter and return the clamped height sent to the controller, the call does not wait for the lift to arrive."""
+    from std_msgs.msg import Float64
+
+    from arena_robots.actuators import lift_limits, lift_topic
+
+    if not math.isfinite(height):
+        raise ToolError("height must be finite")
+    entry = await _member(env_id, robot)
+    name, spec = _actuator_spec(entry, "lift", instance)
+    topic = lift_topic(entry["ns"], name)
+    echo = await _actuate(entry, "lift", Float64, topic, Float64(data=float(height)))
+    return {"robot": entry["name"], "instance": name, "topic": topic, "joint": spec.joint, "requested": height, "applied": echo.data, "clamped": echo.data != height, "limits": lift_limits(spec)}
+
+
+@domain.tool()
+async def robots_gripper(
+    env_id: EnvId = None,
+    robot: RobotName = None,
+    command: Annotated[Literal["open", "close"] | None, Field(description="open or close to the positions of caps/gripper.yaml, instead of an explicit position")] = None,
+    position: Annotated[float | None, Field(description="joint position of the gripper in m or rad, clamped between its open and close positions")] = None,
+    max_effort: Annotated[float, Field(ge=0, description="N or Nm, 0 = the gripper's max_effort, larger values are capped to it")] = 0.0,
+    instance: Annotated[str, Field(description="gripper instance (mount name), empty for the only gripper")] = "",
+) -> dict[str, Any]:
+    """Open, close or set the position of a robot's gripper through its gripper adapter and return the clamped position and effort sent to the controller, the call does not wait for the fingers to settle."""
+    from control_msgs.msg import GripperCommand
+
+    from arena_robots.actuators import gripper_range, gripper_topic
+
+    if (command is None) == (position is None):
+        raise ToolError("pass exactly one of command and position", hint="command is open or close, position an explicit joint value")
+    entry = await _member(env_id, robot)
+    name, spec = _actuator_spec(entry, "gripper", instance)
+    target = spec.positions[command] if command is not None else cast("float", position)
+    topic = gripper_topic(entry["ns"], name)
+    echo = await _actuate(entry, "gripper", GripperCommand, topic, GripperCommand(position=float(target), max_effort=float(max_effort)))
+    return {"robot": entry["name"], "instance": name, "topic": topic, "joint": spec.joint, "requested": target, "applied": echo.position, "max_effort": echo.max_effort, "clamped": echo.position != target, "range": gripper_range(spec)}
 
 
 async def _cmd_vel(entry: dict[str, Any]) -> tuple[str, str, Callable[[float, float, float], Awaitable[None]]]:

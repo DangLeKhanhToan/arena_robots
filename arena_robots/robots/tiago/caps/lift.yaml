@@ -1,3 +1,4 @@
 torso:
   joint: torso_lift_joint
   controller: torso_controller
+  limits: [0.0, 0.35]

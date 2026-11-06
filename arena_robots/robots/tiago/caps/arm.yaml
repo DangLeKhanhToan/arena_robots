@@ -10,6 +10,15 @@ arm:
     - arm_6_joint
     - arm_7_joint
   controller: arm_controller
+  moveit:
+    planning_group: arm
+    robot_name: tiago
+    srdf:
+      package: arena_robots
+      path: robots/tiago/srdf/arm.srdf.xacro
+    joint_limits:
+      package: arena_robots
+      path: robots/tiago/srdf/joint_limits.yaml
   workspace:
     type: box
     frame: base_link
@@ -33,4 +42,31 @@ arm:
         arm_4_joint: 1.15
         arm_5_joint: -1.57
         arm_6_joint: 0.2
+        arm_7_joint: 0.0
+    wave_up:
+      joints:
+        arm_1_joint: 0.21
+        arm_2_joint: -0.2
+        arm_3_joint: -2.2
+        arm_4_joint: 1.9
+        arm_5_joint: -1.57
+        arm_6_joint: 0.2
+        arm_7_joint: 0.0
+    wave_l:
+      joints:
+        arm_1_joint: 0.21
+        arm_2_joint: -0.2
+        arm_3_joint: -2.2
+        arm_4_joint: 1.9
+        arm_5_joint: -1.57
+        arm_6_joint: 0.8
+        arm_7_joint: 0.0
+    wave_r:
+      joints:
+        arm_1_joint: 0.21
+        arm_2_joint: -0.2
+        arm_3_joint: -2.2
+        arm_4_joint: 1.9
+        arm_5_joint: -1.57
+        arm_6_joint: -0.4
         arm_7_joint: 0.0

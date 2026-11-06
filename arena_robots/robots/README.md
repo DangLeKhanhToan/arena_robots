@@ -73,8 +73,8 @@ Adapters declare `requires: frozenset[str]` via `@BringupMeta.attach(requires=fr
 |---|---|---|---|
 | `mobile` | `caps/mobile.yaml` | **flat** (singleton) | drivable chassis (wheeled / tracked / omni) |
 | `arm` | `caps/arm.yaml` | **dict** (named instances) | serial manipulator with an IK-solvable tip |
-| `lift` | `caps/lift.yaml` | **dict** (named instances) | prismatic vertical positioner (Ewellix column, torso lift, scissor) |
-| `gripper` | `caps/gripper.yaml` | **dict** (named instances) | end effector with one actuated joint (`joint`, `controller`, `positions`, `max_effort`, optional `arm`) |
+| `lift` | `caps/lift.yaml` | **dict** (named instances) | prismatic vertical positioner (Ewellix column, torso lift, scissor), commanded by the `direct` lift adapter (`joint`, `controller`, optional `limits`) |
+| `gripper` | `caps/gripper.yaml` | **dict** (named instances) | end effector with one actuated joint (`joint`, `controller`, `positions`, `max_effort`, optional `arm`), commanded by the `direct` gripper adapter |
 
 Reserved for future: `ptu_head`, `dual_arm`. Continuum arms either
 discretize into the serial-chain shape or use a future `kind: continuum`
@@ -192,6 +192,18 @@ arm:
     args: {ur_type: ur5e, safety_limits: true}
 ```
 
+The `moveit:` block declares what `moveit_factory.build_moveit_params` needs and assumes no
+vendor. `planning_group` names the group the task handlers plan for; `srdf` and `joint_limits`
+(each `{package, path}`) default into `package`; `args` are the xacro mappings of URDF and SRDF
+(`prefix`/`mount`/`parent` also render the arm component's SRDF and joint limits per
+placement); `robot_name` is the builder name (default: `package` minus `_moveit_config`, else the
+robot). `package` is optional: a block with `srdf` and no `package` takes Arena-owned defaults
+(OMPL with its stock planner configs). Every build, packaged or not, sets a KDL solver on the
+planning group unless the package's kinematics file already names it, and maps the arm's
+`controller` (FollowJointTrajectory over the `chain` joints) as the only MoveIt controller.
+`tiago` declares its own `srdf/arm.srdf.xacro` and `srdf/joint_limits.yaml` this way; the `fr3`
+component does the same under `components/arm/fr3`.
+
 For platforms that ship an upstream SRDF, structural primitives can be derived
 from it; `controller:` and adapter sub-blocks stay authored:
 
@@ -211,6 +223,7 @@ derivation (structural-without-semantics is ambiguous).
 lift:
   joint: robot_lift_ewellix_lift_top_joint
   controller: lift_controller
+  limits: [0.0, 0.9]       # joint range the lift adapter clamps to, optional
 ```
 
 `caps/gripper.yaml` (when a platform gets one) uses a back-reference to its

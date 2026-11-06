@@ -1,0 +1,56 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="fr3_arm_fragment">
+  <xacro:arg name="prefix" default="robot_"/>
+  <xacro:arg name="mount" default="arm"/>
+  <xacro:arg name="parent" default="chassis_link"/>
+
+  <group name="$(arg mount)_manipulator">
+    <chain base_link="$(arg prefix)$(arg mount)_fr3_link0" tip_link="$(arg prefix)$(arg mount)_fr3_link8"/>
+  </group>
+
+  <group_state name="stow" group="$(arg mount)_manipulator">
+    <joint name="$(arg prefix)$(arg mount)_fr3_joint1" value="0.0"/>
+    <joint name="$(arg prefix)$(arg mount)_fr3_joint2" value="-1.5"/>
+    <joint name="$(arg prefix)$(arg mount)_fr3_joint3" value="0.0"/>
+    <joint name="$(arg prefix)$(arg mount)_fr3_joint4" value="-2.9"/>
+    <joint name="$(arg prefix)$(arg mount)_fr3_joint5" value="0.0"/>
+    <joint name="$(arg prefix)$(arg mount)_fr3_joint6" value="1.4"/>
+    <joint name="$(arg prefix)$(arg mount)_fr3_joint7" value="0.785"/>
+  </group_state>
+
+  <group_state name="ready" group="$(arg mount)_manipulator">
+    <joint name="$(arg prefix)$(arg mount)_fr3_joint1" value="0.0"/>
+    <joint name="$(arg prefix)$(arg mount)_fr3_joint2" value="-0.785"/>
+    <joint name="$(arg prefix)$(arg mount)_fr3_joint3" value="0.0"/>
+    <joint name="$(arg prefix)$(arg mount)_fr3_joint4" value="-2.356"/>
+    <joint name="$(arg prefix)$(arg mount)_fr3_joint5" value="0.0"/>
+    <joint name="$(arg prefix)$(arg mount)_fr3_joint6" value="1.571"/>
+    <joint name="$(arg prefix)$(arg mount)_fr3_joint7" value="0.785"/>
+  </group_state>
+
+  <disable_collisions link1="$(arg prefix)$(arg parent)" link2="$(arg prefix)$(arg mount)_fr3_link0" reason="Adjacent"/>
+  <disable_collisions link1="$(arg prefix)$(arg parent)" link2="$(arg prefix)$(arg mount)_fr3_link1" reason="Default"/>
+  <disable_collisions link1="$(arg prefix)$(arg mount)_fr3_link0" link2="$(arg prefix)$(arg mount)_fr3_link1" reason="Adjacent"/>
+  <disable_collisions link1="$(arg prefix)$(arg mount)_fr3_link0" link2="$(arg prefix)$(arg mount)_fr3_link2" reason="Never"/>
+  <disable_collisions link1="$(arg prefix)$(arg mount)_fr3_link0" link2="$(arg prefix)$(arg mount)_fr3_link3" reason="Never"/>
+  <disable_collisions link1="$(arg prefix)$(arg mount)_fr3_link0" link2="$(arg prefix)$(arg mount)_fr3_link4" reason="Never"/>
+  <disable_collisions link1="$(arg prefix)$(arg mount)_fr3_link1" link2="$(arg prefix)$(arg mount)_fr3_link2" reason="Adjacent"/>
+  <disable_collisions link1="$(arg prefix)$(arg mount)_fr3_link1" link2="$(arg prefix)$(arg mount)_fr3_link3" reason="Never"/>
+  <disable_collisions link1="$(arg prefix)$(arg mount)_fr3_link1" link2="$(arg prefix)$(arg mount)_fr3_link4" reason="Never"/>
+  <disable_collisions link1="$(arg prefix)$(arg mount)_fr3_link2" link2="$(arg prefix)$(arg mount)_fr3_link3" reason="Adjacent"/>
+  <disable_collisions link1="$(arg prefix)$(arg mount)_fr3_link2" link2="$(arg prefix)$(arg mount)_fr3_link4" reason="Never"/>
+  <disable_collisions link1="$(arg prefix)$(arg mount)_fr3_link2" link2="$(arg prefix)$(arg mount)_fr3_link6" reason="Never"/>
+  <disable_collisions link1="$(arg prefix)$(arg mount)_fr3_link3" link2="$(arg prefix)$(arg mount)_fr3_link4" reason="Adjacent"/>
+  <disable_collisions link1="$(arg prefix)$(arg mount)_fr3_link3" link2="$(arg prefix)$(arg mount)_fr3_link5" reason="Never"/>
+  <disable_collisions link1="$(arg prefix)$(arg mount)_fr3_link3" link2="$(arg prefix)$(arg mount)_fr3_link6" reason="Never"/>
+  <disable_collisions link1="$(arg prefix)$(arg mount)_fr3_link3" link2="$(arg prefix)$(arg mount)_fr3_link7" reason="Never"/>
+  <disable_collisions link1="$(arg prefix)$(arg mount)_fr3_link4" link2="$(arg prefix)$(arg mount)_fr3_link5" reason="Adjacent"/>
+  <disable_collisions link1="$(arg prefix)$(arg mount)_fr3_link4" link2="$(arg prefix)$(arg mount)_fr3_link6" reason="Never"/>
+  <disable_collisions link1="$(arg prefix)$(arg mount)_fr3_link4" link2="$(arg prefix)$(arg mount)_fr3_link7" reason="Never"/>
+  <disable_collisions link1="$(arg prefix)$(arg mount)_fr3_link4" link2="$(arg prefix)$(arg mount)_fr3_link8" reason="Never"/>
+  <disable_collisions link1="$(arg prefix)$(arg mount)_fr3_link5" link2="$(arg prefix)$(arg mount)_fr3_link6" reason="Adjacent"/>
+  <disable_collisions link1="$(arg prefix)$(arg mount)_fr3_link5" link2="$(arg prefix)$(arg mount)_fr3_link7" reason="Never"/>
+  <disable_collisions link1="$(arg prefix)$(arg mount)_fr3_link6" link2="$(arg prefix)$(arg mount)_fr3_link7" reason="Adjacent"/>
+  <disable_collisions link1="$(arg prefix)$(arg mount)_fr3_link6" link2="$(arg prefix)$(arg mount)_fr3_link8" reason="Default"/>
+  <disable_collisions link1="$(arg prefix)$(arg mount)_fr3_link7" link2="$(arg prefix)$(arg mount)_fr3_link8" reason="Adjacent"/>
+</robot>

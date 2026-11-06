@@ -88,3 +88,9 @@ class TestRbkairosFr3EndToEnd:
             assert [c.get("name") for c in by_name[name].findall("command_interface")] == ["position"], name
         assert by_name[_MIMIC_FINGER].find("command_interface") is None
         assert by_name[_MIMIC_FINGER].get("mimic") == "true"
+
+    def test_arm_joints_start_in_the_stow_pose(self, merged: ET.Element) -> None:
+        """Every FR3 joint starts inside its limits, at the stow pose."""
+        tag = merged.findall("ros2_control")[0]
+        initial = {j.get("name", ""): float(j.find("state_interface[@name='position']/param[@name='initial_value']").text) for j in tag.iter("joint") if j.get("name", "") in _ARM_JOINTS}
+        assert initial == dict(zip(_ARM_JOINTS, [0.0, -1.5, 0.0, -2.9, 0.0, 1.4, 0.785], strict=True))

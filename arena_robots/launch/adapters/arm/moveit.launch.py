@@ -19,8 +19,6 @@ def generate_launch_description():
     namespace = LaunchArgument("namespace")
     frame = LaunchArgument("frame")
     use_sim_time = LaunchArgument("use_sim_time")
-    arm_controller = LaunchArgument("arm_controller")
-    arm_joints_json = LaunchArgument("arm_joints_json")
     parts_json = LaunchArgument("parts_json", default_value="{}")
     instance = LaunchArgument("instance", default_value="")
 
@@ -28,8 +26,6 @@ def generate_launch_description():
         ns = namespace.substitution.perform(context)
         robot_name = robot.substitution.perform(context)
         sim = use_sim_time.substitution.perform(context).lower() == "true"
-        controller_name = arm_controller.substitution.perform(context)
-        joints = json.loads(arm_joints_json.substitution.perform(context))
         parts = {
             t: [RequestPart(variant=i["variant"], mount=i.get("mount")) for i in items]
             for t, items in json.loads(parts_json.substitution.perform(context)).items()
@@ -40,25 +36,7 @@ def generate_launch_description():
 
         moveit_params = build_moveit_params(robot_name, tf_prefix=tf_prefix, parts=parts, instance=instance_name)
         if moveit_params is None:
-            raise ValueError(f"{robot_name}: missing 'arm' cap or moveit.package; cannot launch moveit adapter")
-
-        controllers_params = {
-            "moveit_controller_manager": "moveit_simple_controller_manager/MoveItSimpleControllerManager",
-            "moveit_simple_controller_manager": {
-                "controller_names": [controller_name],
-                controller_name: {
-                    "action_ns": "follow_joint_trajectory",
-                    "type": "FollowJointTrajectory",
-                    "default": True,
-                    "joints": list(joints),
-                },
-            },
-            "trajectory_execution": {
-                "allowed_execution_duration_scaling": 1.2,
-                "allowed_goal_duration_margin": 0.5,
-                "allowed_start_tolerance": 0.1,
-            },
-        }
+            raise ValueError(f"{robot_name}: missing 'arm' cap or caps.moveit block; cannot launch moveit adapter")
 
         move_group = Node(
             package="moveit_ros_move_group",
@@ -66,7 +44,6 @@ def generate_launch_description():
             output="screen",
             parameters=[
                 moveit_params,
-                controllers_params,
                 {"use_sim_time": sim},
             ],
         )
