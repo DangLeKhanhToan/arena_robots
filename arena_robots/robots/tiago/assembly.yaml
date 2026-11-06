@@ -1,0 +1,31 @@
+prefix: ""
+mounts:
+  base_front:
+    parent: base_link
+    xyz: [0.202, 0, -0.004]
+    rpy: [0, 0, 0]
+    accepts: [lidar]
+    frame: lidar
+  head:
+    parent: head_2_link
+    xyz: [0.0908, 0.08, 0]
+    rpy: [-1.5707963267948966, 0, 0]
+    accepts: [camera]
+    frame: head_camera
+  imu:
+    parent: base_link
+    xyz: [0.10171, 0, 0.11282]
+    rpy: [0, 0, 0]
+    accepts: [imu]
+defaults:
+  lidar:
+    - variant: arena_default
+      mount: base_front
+      params: {min_angle: -1.74533, max_angle: 1.74533, samples: 401, max_range: 25.0}
+  camera:
+    - variant: oakd_rgbd
+      mount: head
+      overrides: {name: head_camera, topic: head_camera}
+  imu:
+    - variant: arena_default
+      mount: imu

@@ -1,0 +1,72 @@
+odom_frame: odom
+sensor_frame: lidar
+radius: 0.3
+is_holonomic: false
+
+footprint: [[0.28, 0.0], [0.2, 0.2], [0.0, 0.28], [-0.2, 0.2], [-0.28, 0.0], [-0.2, -0.2], [0.0, -0.28], [0.2, -0.2]]
+
+polygons_dict:
+  StopPolygon:
+    type: polygon
+    points: [[0.33, 0.0], [0.24, 0.24], [0.0, 0.33], [-0.24, 0.24], [-0.33, 0.0], [-0.24, -0.24], [0.0, -0.33], [0.24, -0.24]]
+    action_type: stop
+    min_points: 4
+    visualize: true
+    polygon_pub_topic: polygon_stop
+    enabled: true
+
+velocity_limits:
+  linear: [-1.0, 1.0]
+  angular: [-1.5, 1.5]
+acceleration_limits:
+  linear: 1.0
+  angular: 2.0
+
+planar:
+  velocity: {linear: [-1.0, 1.0], lateral: [0.0, 0.0], angular: [-1.5, 1.5]}
+  acceleration: {linear: 1.0, lateral: .inf, angular: 2.0}
+  gain: {linear: 1.0, lateral: 1.0, angular: 1.0}
+  lag: 0.0
+  traction: 4.9
+  pivot: 0.0
+  timeout: 0.25
+
+actions:
+  continuous:
+    linear:
+      min: -1.0
+      max: 1.0
+    angular:
+      min: -1.5
+      max: 1.5
+  discrete:
+    - angular: 0.0
+      linear: 0.3
+      name: move_forward
+    - angular: 0.0
+      linear: -0.15
+      name: move_backward
+    - angular: 0.35
+      linear: 0.15
+      name: turn_left
+    - angular: -0.35
+      linear: 0.15
+      name: turn_right
+    - angular: 0.75
+      linear: 0.0
+      name: turn_strong_left
+    - angular: -0.75
+      linear: 0.0
+      name: turn_strong_right
+    - angular: 0.0
+      linear: 0.0
+      name: stop
+
+laser:
+  angle:
+    increment: 0.00872664626
+    max: 1.74533
+    min: -1.74533
+  num_beams: 401
+  range: 25.0
+  update_rate: 10

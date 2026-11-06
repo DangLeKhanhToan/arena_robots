@@ -247,3 +247,145 @@ class TestBuildMoveitParamsSmallUrComponents(_SrdfLinksExist):
         p = build_moveit_params("jackal", tf_prefix="", parts={"arm": [RequestPart(variant=request.param, mount="top")]}, instance="top")
         assert p is not None
         return p
+
+
+def _group_chains(params: dict) -> dict[str, tuple[str, str]]:
+    srdf = ET.fromstring(params["robot_description_semantic"])
+    return {g.get("name", ""): (c.get("base_link", ""), c.get("tip_link", "")) for g in srdf.iter("group") for c in g.findall("chain")}
+
+
+def _group_states(params: dict, group: str) -> set[str]:
+    srdf = ET.fromstring(params["robot_description_semantic"])
+    return {gs.get("name", "") for gs in srdf.iter("group_state") if gs.get("group") == group}
+
+
+def _controller_joints(params: dict, controller: str) -> list[str]:
+    mgr = params["moveit_simple_controller_manager"]
+    assert mgr["controller_names"] == [controller]
+    assert mgr[controller]["type"] == "FollowJointTrajectory"
+    return mgr[controller]["joints"]
+
+
+@pytest.mark.skipif(_XACRO is None, reason="xacro CLI not on PATH; run under the Arena container (bash arena -c pytest)")
+class TestBuildMoveitParamsFr3(_SrdfLinksExist):
+    """FR3 on rbkairos has no MoveIt config package: srdf, joint limits, KDL and controller come from Arena-owned files."""
+
+    _JOINTS = [f"robot_arm_fr3_joint{i}" for i in range(1, 8)]
+
+    @pytest.fixture(scope="class")
+    def params(self, require_installed: Callable[[str], None]) -> dict:
+        from arena_robots.assembly import RequestPart
+        from arena_robots.moveit_factory import build_moveit_params
+
+        require_installed("arm/fr3")
+        require_installed("gripper/franka_hand")
+        p = build_moveit_params(
+            "rbkairos",
+            tf_prefix="",
+            parts={"arm": [RequestPart(variant="fr3", mount="arm_mount")], "gripper": [RequestPart(variant="franka_hand", mount="gripper_mount")]},
+        )
+        assert p is not None
+        return p
+
+    def test_planning_group_chain(self, params: dict) -> None:
+        assert _group_chains(params)["arm_manipulator"] == ("robot_arm_fr3_link0", "robot_arm_fr3_link8")
+
+    def test_named_states_match_caps(self, params: dict) -> None:
+        assert _group_states(params, "arm_manipulator") == {"stow", "ready"}
+
+    def test_joint_limits_cover_arm_joints(self, params: dict) -> None:
+        assert set(self._JOINTS) <= set(params["robot_description_planning"]["joint_limits"])
+
+    def test_kinematics_solver_set_on_group(self, params: dict) -> None:
+        assert params["robot_description_kinematics"]["arm_manipulator"]["kinematics_solver"] == "kdl_kinematics_plugin/KDLKinematicsPlugin"
+
+    def test_controller_names_arm_controller(self, params: dict) -> None:
+        assert _controller_joints(params, "arm_controller") == self._JOINTS
+
+    def test_ompl_is_default_pipeline(self, params: dict) -> None:
+        assert params["default_planning_pipeline"] == "ompl"
+        assert "planner_configs" in params["ompl"]
+
+    def test_hand_end_effector_on_arm_group(self, params: dict) -> None:
+        ee = next(iter(ET.fromstring(params["robot_description_semantic"]).iter("end_effector")))
+        assert ee.get("parent_group") == "arm_manipulator"
+        assert ee.get("parent_link") == "robot_arm_fr3_link8"
+
+
+@pytest.mark.skipif(_XACRO is None, reason="xacro CLI not on PATH; run under the Arena container (bash arena -c pytest)")
+class TestBuildMoveitParamsTiago(_SrdfLinksExist):
+    """TIAGo's native arm: group `arm` from torso_lift_link to arm_tool_link, limits from the URDF."""
+
+    _JOINTS = [f"arm_{i}_joint" for i in range(1, 8)]
+
+    @pytest.fixture(scope="class")
+    def params(self) -> dict:
+        from arena_robots.moveit_factory import build_moveit_params
+
+        p = build_moveit_params("tiago")
+        assert p is not None
+        return p
+
+    def test_planner_checks_motion_at_a_fine_resolution(self, params: dict) -> None:
+        """OMPL validates each motion segment densely enough that the final path check finds no missed contact."""
+        assert params["ompl"]["arm"]["longest_valid_segment_fraction"] == 0.002
+
+    def test_planning_group_chain(self, params: dict) -> None:
+        assert _group_chains(params)["arm"] == ("torso_lift_link", "arm_tool_link")
+
+    def test_named_states_match_caps(self, params: dict) -> None:
+        assert _group_states(params, "arm") == {"stow", "ready"}
+
+    def test_joint_limits_cover_arm_joints(self, params: dict) -> None:
+        assert set(self._JOINTS) <= set(params["robot_description_planning"]["joint_limits"])
+
+    def test_joint_limits_match_urdf(self, params: dict) -> None:
+        urdf = ET.fromstring(params["robot_description"])
+        limits = params["robot_description_planning"]["joint_limits"]
+        for joint in (j for j in urdf.findall("joint") if j.get("name") in self._JOINTS):
+            lim = joint.find("limit")
+            assert lim is not None
+            assert limits[joint.get("name")]["max_position"] == pytest.approx(float(lim.get("upper", "nan")))
+            assert limits[joint.get("name")]["min_position"] == pytest.approx(float(lim.get("lower", "nan")))
+
+    def test_kinematics_solver_set_on_group(self, params: dict) -> None:
+        assert params["robot_description_kinematics"]["arm"]["kinematics_solver"] == "kdl_kinematics_plugin/KDLKinematicsPlugin"
+
+    def test_controller_names_arm_controller(self, params: dict) -> None:
+        assert _controller_joints(params, "arm_controller") == self._JOINTS
+
+    def test_tf_prefix_reaches_chain(self) -> None:
+        from arena_robots.moveit_factory import build_moveit_params
+
+        p = build_moveit_params("tiago", tf_prefix="env_0/tiago/")
+        assert p is not None
+        assert _group_chains(p)["arm"] == ("env_0/tiago/torso_lift_link", "env_0/tiago/arm_tool_link")
+
+
+@pytest.mark.skipif(_XACRO is None, reason="xacro CLI not on PATH; run under the Arena container (bash arena -c pytest)")
+class TestBuildMoveitParamsUrKeepsWorking:
+    """UR keeps its config package; the factory adds the arm controller mapping and a solver on the planning group."""
+
+    @pytest.fixture(scope="class")
+    def params(self, require_installed: Callable[[str], None]) -> dict:
+        from arena_robots.moveit_factory import build_moveit_params
+
+        require_installed("rbvogui_plus")
+        p = build_moveit_params("rbvogui_plus", tf_prefix="robot_")
+        assert p is not None
+        return p
+
+    def test_planning_group_chain(self, params: dict) -> None:
+        assert "ur_manipulator" in _group_chains(params)
+
+    def test_joint_limits_cover_arm_joints(self, params: dict) -> None:
+        limits = params["robot_description_planning"]["joint_limits"]
+        assert {f"robot_arm_{n}_joint" for n in ("shoulder_pan", "shoulder_lift", "elbow", "wrist_1", "wrist_2", "wrist_3")} <= set(limits)
+
+    def test_kinematics_solver_set_on_group(self, params: dict) -> None:
+        assert params["robot_description_kinematics"]["ur_manipulator"]["kinematics_solver"] == "kdl_kinematics_plugin/KDLKinematicsPlugin"
+
+    def test_controller_names_arm_controller(self, params: dict) -> None:
+        joints = _controller_joints(params, "arm_controller")
+        assert joints[0] == "robot_arm_shoulder_pan_joint"
+        assert len(joints) == 6

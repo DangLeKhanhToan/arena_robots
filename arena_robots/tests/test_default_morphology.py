@@ -46,6 +46,16 @@ class TestEffectiveSensorsMatchModelParams:
         assert [(s.name, s.topic) for s in view.effective_sensors(pinned)] == [(s.name, s.topic) for s in view.model_params.sensors]
 
 
+@pytest.mark.parametrize("robot_name", ROBOT_NAMES)
+def test_golden_is_a_single_rooted_tree(robot_name: str) -> None:
+    """robot_state_publisher rejects a description whose links do not form one tree."""
+    root = ET.parse(GOLDEN_DIR / f"{robot_name}_default.urdf").getroot()
+    links = {link.get("name") for link in root.findall("link")}
+    children = [joint.find("child").get("link") for joint in root.findall("joint")]
+    assert len(children) == len(set(children)), f"{robot_name}: a link has two parent joints"
+    assert len(links - set(children)) == 1, f"{robot_name}: roots {sorted(links - set(children))}"
+
+
 def _origin(joint: ET.Element) -> tuple[tuple[float, ...], tuple[float, ...]]:
     origin = joint.find("origin")
     xyz = origin.get("xyz", "0 0 0") if origin is not None else "0 0 0"
