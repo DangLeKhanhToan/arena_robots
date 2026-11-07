@@ -98,7 +98,7 @@ def test_slam_maps_from_the_lidar_and_leaves_the_tf_to_the_simulator():
     entities, context = _entities("slam")
     params = _params(_node(entities, "async_slam_toolbox_node"), context)["slam_toolbox"]["ros__parameters"]
     assert params["scan_topic"] == f"{NAMESPACE}/lidar"
-    assert params["odom_frame"] == "env_0/jackal/odom"
+    assert params["odom_frame"] == "map"
     assert params["base_frame"] == "env_0/jackal/base_link"
     assert params["map_frame"] == "map"
     assert params["transform_publish_period"] == 0.0

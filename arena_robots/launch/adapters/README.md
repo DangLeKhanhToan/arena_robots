@@ -33,8 +33,9 @@ where `${...}` values such as `controller_plugins_dict` come from.
 `static` (default) reads the env's map server under `arena_env_node`. `slam` starts
 `slam_toolbox` with [`config/nav2/slam.yaml`](../../config/nav2/slam.yaml) on the
 robot's first laserscan sensor and reads its `<namespace>/map`, so the map grows
-while the robot drives. It only maps: poses come from the simulator's odometry,
-it matches no scans and publishes no TF, and the simulator keeps `map -> odom`. Nav2's lifecycle
+while the robot drives. It only maps: poses come from the simulator's `map -> base`
+(so the map stays in the env's frame on every level of a stacked world), it matches
+no scans and publishes no TF, and the simulator keeps `map -> odom`. Nav2's lifecycle
 manager brings `slam_toolbox` up before the costmaps, and its absolute `/map` and
 `/map_metadata` are remapped into the robot's namespace.
 
