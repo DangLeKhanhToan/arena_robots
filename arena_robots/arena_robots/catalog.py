@@ -228,6 +228,7 @@ class Catalog:
         available = sorted(set(concrete) | set(family_variants))
         raise RuntimeError(f"component '{type_}/{variant}' not found; available '{type_}' variants: {available}")
 
+
 def _render_sensor_templates(component: ComponentSpec, context: dict[str, typing.Any]) -> list[dict[str, object]]:
     """Deep-copy + render a component's ``sensor.gz`` templates for one placement.
 
@@ -235,6 +236,7 @@ def _render_sensor_templates(component: ComponentSpec, context: dict[str, typing
     shared, cached :class:`ComponentSpec`; the deep copy is what keeps one placement's
     overrides from bleeding into the next (and into every other robot)."""
     return [YAMLReplacer(context).replace(copy.deepcopy(template)) for template in component.sensor_gz]
+
 
 def render_effective_sensors(resolved: ResolvedAssembly, catalog: Catalog, *, prefix: str = 'robot_') -> list[SensorSpec]:
     """Render every placement's ``sensor.gz`` templates into the robot's full effective
@@ -296,6 +298,7 @@ def resolve_mount_parent(resolved: ResolvedAssembly, catalog: Catalog, mount: Mo
 
 _XACRO_NS = 'http://www.ros.org/wiki/xacro'
 
+
 def _gazebo_sensor_lines(entry: dict[str, object]) -> list[str]:
     """``<gazebo reference="..."><sensor .../></gazebo>`` lines for a ``sensor.gz``
     entry whose optional ``define:`` block asks the wrapper to create the backing
@@ -336,6 +339,7 @@ def _gazebo_sensor_lines(entry: dict[str, object]) -> list[str]:
     lines.extend(f'        <collision>{str(collision)}</collision>' for collision in collisions)
     lines.extend(['      </contact>', '    </sensor>', '  </gazebo>'])
     return lines
+
 
 def _chassis_args(chassis_path: Path) -> list[tuple[str, str]]:
     """``(name, default)`` for every top-level ``<xacro:arg>`` in the chassis xacro, in

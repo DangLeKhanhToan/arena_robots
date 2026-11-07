@@ -26,9 +26,7 @@ IMU_SPECS = [
     _spec("imu", "imu", "${namespace}/imu/data", "imu_sensor"),
 ]
 
-CONTACT_SPECS = [
-    _spec("bumper", "contact", "${namespace}/bumper", "bumper_sensor")
-]
+CONTACT_SPECS = [_spec("bumper", "contact", "${namespace}/bumper", "bumper_sensor")]
 
 RBTHERON_SPECS = [
     _spec("lidar", "laserscan", "${namespace}/scan", "front_laser"),
@@ -75,6 +73,7 @@ class TestTopicElementsImu:
         assert topic_elements(IMU_SPECS, "/model/env_0/x") == [
             ("imu_sensor", "topic", "/model/env_0/x/imu/data"),
         ]
+
 
 class TestTopicElementsContact:
     def test_relative_prefix(self):
