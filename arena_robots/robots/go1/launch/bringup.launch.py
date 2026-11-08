@@ -29,9 +29,9 @@ def generate_launch_description():
 
     use_sim_time = LaunchConfiguration('use_sim_time')
 
-    declare_namespace = DeclareLaunchArgument('namespace', default_value='')
-    declare_base_frame = DeclareLaunchArgument('base_frame', default_value='base')
-    declare_use_sim_time = DeclareLaunchArgument('use_sim_time', default_value='true')
+    declare_namespace = DeclareLaunchArgument('namespace', default_value='', description='ROS namespace of the robot.')
+    declare_base_frame = DeclareLaunchArgument('base_frame', default_value='base', description='Base link frame of the robot.')
+    declare_use_sim_time = DeclareLaunchArgument('use_sim_time', default_value='true', description='Whether nodes follow the simulator clock (true or false).')
 
     urdf = {'urdf': Command(['xacro ', description_path])}
 

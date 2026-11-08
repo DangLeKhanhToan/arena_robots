@@ -16,12 +16,12 @@ def generate_launch_description() -> LaunchDescription:
     ld_items = []
     LaunchArgument.auto_append(ld_items)
 
-    robot = LaunchArgument('robot')
-    arena_env_node = LaunchArgument('arena_env_node', default_value='')
-    namespace = LaunchArgument('namespace')
-    frame = LaunchArgument('frame')
-    use_sim_time = LaunchArgument('use_sim_time')
-    kind = LaunchArgument('kind')
+    robot = LaunchArgument('robot', description='Robot model name under arena_robots/robots.')
+    arena_env_node = LaunchArgument('arena_env_node', default_value='', description='Name of the env node whose map and services the robot uses, passed by the including launch file.')
+    namespace = LaunchArgument('namespace', description='ROS namespace of the robot, passed by the including launch file.')
+    frame = LaunchArgument('frame', description='Frame prefix of the robot, passed by the including launch file.')
+    use_sim_time = LaunchArgument('use_sim_time', description='Whether nodes follow the simulator clock, passed by the including launch file.')
+    kind = LaunchArgument('kind', description='Nav2 global planner kind, a directory under config/nav2/planners.')
 
     nav2_launch = PathJoinSubstitution([
         FindPackageShare('arena_robots'),
