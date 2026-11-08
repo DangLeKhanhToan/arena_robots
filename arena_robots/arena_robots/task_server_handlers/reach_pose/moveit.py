@@ -13,7 +13,7 @@ from action_msgs.msg import GoalStatus
 from arena_robots_msgs.action import ReachPose
 from control_msgs.msg import JointTrajectoryControllerState
 from geometry_msgs.msg import Pose, PoseStamped
-from moveit_msgs.action import MoveGroup
+from moveit_msgs.action import ExecuteTrajectory, MoveGroup
 from moveit_msgs.msg import (
     AllowedCollisionEntry,
     AllowedCollisionMatrix,
@@ -29,7 +29,9 @@ from moveit_msgs.msg import (
 from moveit_msgs.srv import GetPlanningScene
 from rcl_interfaces.srv import GetParameters
 from rclpy.action import ActionClient
+from sensor_msgs.msg import JointState
 from shape_msgs.msg import SolidPrimitive
+from std_msgs.msg import String
 from tf2_ros import TransformException
 
 from arena_robots.lockstep_beat import LockstepBeat
@@ -55,6 +57,7 @@ _ARM_BEAT_PERIOD = 0.1
 _PILZ = "pilz_industrial_motion_planner"
 _MOTIONS = ("", "free", "linear")
 _SERVICE_TIMEOUT = 10.0
+_START_CLAMP = 0.05
 
 
 class _ReachAbort(Exception):
@@ -115,6 +118,17 @@ def _arm_links(urdf: str, root_link: str, chain: Sequence[str]) -> frozenset[str
     links = set(_descendant_links(urdf, root_link))
     links.update(child_of[joint] for joint in chain if joint in child_of)
     return frozenset(links)
+
+
+def _joint_bounds(urdf: str) -> dict[str, tuple[float, float]]:
+    """Position bounds of every joint the URDF limits."""
+    bounds: dict[str, tuple[float, float]] = {}
+    for joint in ET.fromstring(urdf).iter("joint"):
+        limit = joint.find("limit")
+        if limit is None or limit.get("lower") is None or limit.get("upper") is None:
+            continue
+        bounds[joint.get("name", "")] = (float(limit.get("lower", "0")), float(limit.get("upper", "0")))
+    return bounds
 
 
 def _allow_contact(acm: AllowedCollisionMatrix, object_id: str, links: frozenset[str]) -> AllowedCollisionMatrix:
@@ -183,12 +197,16 @@ class ReachPoseHandlerMoveIt(TaskHandler[ReachPose.Goal, ReachPose.Feedback, Rea
         self._node = node
         self._tf_prefix = bringup.frame
         self._native_clients: dict[str, ActionClient] = {mount: ActionClient(node, MoveGroup, str(bringup.arm_namespace(mount)("move_action"))) for mount in bringup.arms()}
+        self._exec_clients: dict[str, ActionClient] = {mount: ActionClient(node, ExecuteTrajectory, str(bringup.arm_namespace(mount)("execute_trajectory"))) for mount in bringup.arms()}
+        self._stop_pubs = {mount: node.create_publisher(String, str(bringup.arm_namespace(mount)("trajectory_execution_event")), 10) for mount in bringup.arms()}
+        self._executing: dict[bytes, str] = {}
         self._beat = LockstepBeat(node, "reach")
         self._native_goals = NativeGoals()
         self._guards: dict[str, _Guard] = {}
         self._scene_clients = {mount: node.create_client(GetPlanningScene, str(bringup.arm_namespace(mount)("get_planning_scene"))) for mount in bringup.arms()}
         self._param_clients = {mount: node.create_client(GetParameters, str(bringup.arm_namespace(mount)("move_group", "get_parameters"))) for mount in bringup.arms()}
-        self._models: dict[str, frozenset[str]] = {}
+        self._models: dict[str, tuple[frozenset[str], dict[str, tuple[float, float]]]] = {}
+        self._positions: dict[str, dict[str, float]] = {}
         for mount, arm in bringup.arms().items():
             node.create_subscription(
                 JointTrajectoryControllerState,
@@ -199,17 +217,19 @@ class ReachPoseHandlerMoveIt(TaskHandler[ReachPose.Goal, ReachPose.Feedback, Rea
 
     def _on_controller_state(self, mount: str, msg: JointTrajectoryControllerState) -> None:
         self._beat.pulse(msg.header.stamp)
+        self._positions[mount] = dict(zip(msg.joint_names, msg.feedback.positions, strict=False))
         guard = self._guards.get(mount)
         if guard is None or guard.violation:
             return
         reason = _guard_step(guard, msg)
         if reason:
-            self._violate(guard, reason)
+            guard.violation = reason
+            self._halt(mount)
+            guard.native_handle.cancel_goal_async()
 
-    @staticmethod
-    def _violate(guard: _Guard, reason: str) -> None:
-        guard.violation = reason
-        guard.native_handle.cancel_goal_async()
+    def _halt(self, mount: str) -> None:
+        """Stop the trajectory MoveIt executes on `mount`."""
+        self._stop_pubs[mount].publish(String(data="stop"))
 
     def _tool_pose(self, arm: ArmSpec, frame: str) -> Pose | None:
         try:
@@ -234,8 +254,8 @@ class ReachPoseHandlerMoveIt(TaskHandler[ReachPose.Goal, ReachPose.Feedback, Rea
             raise _ReachAbort(f"{what} returned no response")
         return response
 
-    async def _model(self, mount: str, arm: ArmSpec) -> frozenset[str]:
-        """Links that may touch a contact object, from move_group's URDF."""
+    async def _model(self, mount: str, arm: ArmSpec) -> tuple[frozenset[str], dict[str, tuple[float, float]]]:
+        """Links that may touch a contact object and the joint bounds, both from move_group's URDF."""
         if mount not in self._models:
             request = GetParameters.Request()
             request.names = ["robot_description"]
@@ -243,11 +263,32 @@ class ReachPoseHandlerMoveIt(TaskHandler[ReachPose.Goal, ReachPose.Feedback, Rea
             urdf = response.values[0].string_value if response.values else ""
             if not urdf:
                 raise _ReachAbort("move_group has no robot_description")
-            self._models[mount] = _arm_links(urdf, self._tf_prefix + arm.tip_link, arm.chain)
+            self._models[mount] = (_arm_links(urdf, self._tf_prefix + arm.tip_link, arm.chain), _joint_bounds(urdf))
         return self._models[mount]
 
+    def _start_state(self, mount: str, arm: ArmSpec) -> JointState | None:
+        """The current arm state with joints clamped into their bounds, None when a joint is far outside or unknown."""
+        positions = self._positions.get(mount)
+        model = self._models.get(mount)
+        if not positions or model is None:
+            return None
+        bounds = model[1]
+        names: list[str] = []
+        values: list[float] = []
+        for joint in arm.chain:
+            value = positions.get(joint)
+            if value is None:
+                return None
+            low, high = bounds.get(joint, (value, value))
+            clamped = min(max(value, low), high)
+            if abs(clamped - value) > _START_CLAMP:
+                return None
+            names.append(joint)
+            values.append(clamped)
+        return JointState(name=names, position=values)
+
     async def _contact_scene(self, mount: str, arm: ArmSpec, object_ids: Sequence[str]) -> PlanningScene:
-        links = await self._model(mount, arm)
+        links, _ = await self._model(mount, arm)
         request = GetPlanningScene.Request()
         request.components.components = PlanningSceneComponents.ALLOWED_COLLISION_MATRIX
         response = await self._call(self._scene_clients[mount], request, "move_group get_planning_scene")
@@ -260,6 +301,9 @@ class ReachPoseHandlerMoveIt(TaskHandler[ReachPose.Goal, ReachPose.Feedback, Rea
         return scene
 
     def on_cancel(self, goal_handle: ServerGoalHandle) -> CancelResponse:
+        mount = self._executing.get(bytes(goal_handle.goal_id.uuid))
+        if mount is not None:
+            self._halt(mount)
         return self._native_goals.cancel(goal_handle)
 
     async def execute(self, goal_handle: ServerGoalHandle) -> ReachPose.Result:
@@ -306,7 +350,7 @@ class ReachPoseHandlerMoveIt(TaskHandler[ReachPose.Goal, ReachPose.Feedback, Rea
             result.reason = f"named pose {arena_goal.named_target!r} not in caps/arm.yaml.named_poses"
             return result
 
-        while not native_client.server_is_ready():
+        while not (native_client.server_is_ready() and self._exec_clients[mount].server_is_ready()):
             if not goal_handle.is_active:
                 result.status = ReachPose.Result.STATUS_CANCELED
                 result.reason = "goal canceled by client"
@@ -315,6 +359,11 @@ class ReachPoseHandlerMoveIt(TaskHandler[ReachPose.Goal, ReachPose.Feedback, Rea
 
         await self._beat.acquire(_ARM_BEAT_PERIOD)
         try:
+            await self._model(mount, arm)
+            start = self._start_state(mount, arm)
+            if start is not None:
+                mg_goal.request.start_state.is_diff = False
+                mg_goal.request.start_state.joint_state = start
             if arena_goal.contact:
                 mg_goal.planning_options.planning_scene_diff = await self._contact_scene(mount, arm, list(arena_goal.contact))
             frame = self._tf_prefix + arm.base_link if arena_goal.named_target else arena_goal.target.header.frame_id
@@ -342,52 +391,74 @@ class ReachPoseHandlerMoveIt(TaskHandler[ReachPose.Goal, ReachPose.Feedback, Rea
             return result
 
         self._publish_feedback(goal_handle, "PLANNING", 0.0)
-        send_future = native_client.send_goal_async(mg_goal)
-        native_handle = await send_future
-
-        if native_handle is None or not native_handle.accepted:
+        plan_handle = await native_client.send_goal_async(mg_goal)
+        if plan_handle is None or not plan_handle.accepted:
             goal_handle.abort()
             result.status = ReachPose.Result.STATUS_ABORTED
             result.reason = "MoveIt MotionPlanRequest aborted"
             return result
-
-        self._publish_feedback(goal_handle, "EXECUTING", 0.5)
-        guard = _Guard(arm=arm, native_handle=native_handle)
-        self._guards[mount] = guard
-        try:
-            with self._native_goals.tracking(goal_handle, native_handle):
-                wrapped = await native_handle.get_result_async()
-        finally:
-            self._guards.pop(mount, None)
-        if guard.violation and goal_handle.is_active:
-            goal_handle.abort()
-            result.status = ReachPose.Result.STATUS_ABORTED
-            result.reason = guard.violation
-            self._fill_final_pose(result, arm, frame)
-            return result
+        with self._native_goals.tracking(goal_handle, plan_handle):
+            planned = await plan_handle.get_result_async()
         if not goal_handle.is_active:
             result.status = ReachPose.Result.STATUS_CANCELED
             result.reason = "goal canceled by client"
             return result
+        status, reason = self._outcome(planned)
+        if status != ReachPose.Result.STATUS_SUCCEEDED:
+            return self._finish(goal_handle, result, status, reason, arm, frame)
 
-        if wrapped.result is not None:
-            arena_status, arena_reason = _translate_moveit_status(wrapped.result.error_code.val)
-        else:
-            arena_status, arena_reason = ReachPose.Result.STATUS_ABORTED, "MoveIt MotionPlanRequest aborted"
+        execute = ExecuteTrajectory.Goal()
+        execute.trajectory = planned.result.planned_trajectory
+        exec_handle = await self._exec_clients[mount].send_goal_async(execute)
+        if exec_handle is None or not exec_handle.accepted:
+            goal_handle.abort()
+            result.status = ReachPose.Result.STATUS_ABORTED
+            result.reason = "MoveIt trajectory execution refused"
+            return result
+
+        self._publish_feedback(goal_handle, "EXECUTING", 0.5)
+        guard = _Guard(arm=arm, native_handle=exec_handle)
+        self._guards[mount] = guard
+        key = bytes(goal_handle.goal_id.uuid)
+        self._executing[key] = mount
+        if goal_handle.is_cancel_requested:
+            self._halt(mount)
+        try:
+            with self._native_goals.tracking(goal_handle, exec_handle):
+                wrapped = await exec_handle.get_result_async()
+        finally:
+            self._executing.pop(key, None)
+            self._guards.pop(mount, None)
+        if guard.violation and goal_handle.is_active:
+            return self._finish(goal_handle, result, ReachPose.Result.STATUS_ABORTED, guard.violation, arm, frame)
+        if not goal_handle.is_active:
+            result.status = ReachPose.Result.STATUS_CANCELED
+            result.reason = "goal canceled by client"
+            return result
+        if goal_handle.is_cancel_requested:
+            return self._finish(goal_handle, result, ReachPose.Result.STATUS_CANCELED, "goal canceled by client", arm, frame)
+        status, reason = self._outcome(wrapped)
+        return self._finish(goal_handle, result, status, reason, arm, frame)
+
+    @staticmethod
+    def _outcome(wrapped: MoveGroup.Impl.GetResultService.Response | ExecuteTrajectory.Impl.GetResultService.Response) -> tuple[int, str]:
+        """The arena status and reason of a MoveIt action result."""
         if wrapped.status == GoalStatus.STATUS_CANCELED:
-            arena_status = ReachPose.Result.STATUS_CANCELED
-            arena_reason = "goal canceled by client"
+            return ReachPose.Result.STATUS_CANCELED, "goal canceled by client"
+        if wrapped.result is None:
+            return ReachPose.Result.STATUS_ABORTED, "MoveIt MotionPlanRequest aborted"
+        return _translate_moveit_status(wrapped.result.error_code.val)
 
-        if arena_status == ReachPose.Result.STATUS_SUCCEEDED:
+    def _finish(self, goal_handle: ServerGoalHandle, result: ReachPose.Result, status: int, reason: str, arm: ArmSpec, frame: str) -> ReachPose.Result:
+        if status == ReachPose.Result.STATUS_SUCCEEDED:
             self._publish_feedback(goal_handle, "DONE", 1.0)
             goal_handle.succeed()
-        elif arena_status == ReachPose.Result.STATUS_CANCELED:
+        elif status == ReachPose.Result.STATUS_CANCELED:
             goal_handle.canceled()
         else:
             goal_handle.abort()
-
-        result.status = arena_status
-        result.reason = arena_reason
+        result.status = status
+        result.reason = reason
         self._fill_final_pose(result, arm, frame)
         return result
 
@@ -465,5 +536,5 @@ class ReachPoseHandlerMoveIt(TaskHandler[ReachPose.Goal, ReachPose.Feedback, Rea
             mg_goal.request.workspace_parameters.max_corner.x = float(ws_max[0])
             mg_goal.request.workspace_parameters.max_corner.y = float(ws_max[1])
             mg_goal.request.workspace_parameters.max_corner.z = float(ws_max[2])
-        mg_goal.planning_options.plan_only = False
+        mg_goal.planning_options.plan_only = True
         return mg_goal

@@ -129,6 +129,10 @@ class TestBuildGoalMotion:
         assert request.max_velocity_scaling_factor == pytest.approx(0.25)
         assert request.max_acceleration_scaling_factor == pytest.approx(0.25)
 
+    def test_goal_only_plans_so_the_handler_executes_from_its_own_start_state(self, rig) -> None:
+        handler, _, arm = rig
+        assert handler._build_goal(_goal(), arm).planning_options.plan_only is True
+
 
 class TestExecuteValidation:
     def test_unknown_motion_is_aborted(self, rig) -> None:
@@ -232,6 +236,46 @@ class TestArmLinks:
         assert _arm_links(self._URDF, "tip", ["missing"]) == {"tip", "hand", "finger"}
 
 
+class TestJointBounds:
+    _URDF = """<robot name="r">
+      <link name="a"/><link name="b"/><link name="c"/>
+      <joint name="j1" type="revolute"><parent link="a"/><child link="b"/><limit lower="-1.5" upper="1.5" effort="1" velocity="1"/></joint>
+      <joint name="j2" type="continuous"><parent link="b"/><child link="c"/></joint>
+    </robot>"""
+
+    def test_returns_the_limited_joints_only(self) -> None:
+        from arena_robots.task_server_handlers.reach_pose.moveit import _joint_bounds
+
+        assert _joint_bounds(self._URDF) == {"j1": (-1.5, 1.5)}
+
+
+class TestStartState:
+    def _handler(self, positions: dict[str, float], bounds: dict[str, tuple[float, float]]):
+        from arena_robots.task_server_handlers.reach_pose.moveit import ReachPoseHandlerMoveIt
+
+        handler = object.__new__(ReachPoseHandlerMoveIt)
+        handler._positions = {"top": positions}
+        handler._models = {"top": (frozenset(), bounds)}
+        return handler
+
+    class _Arm:
+        chain = ["j1", "j2"]
+
+    def test_a_joint_resting_a_hair_outside_its_limit_is_clamped(self) -> None:
+        handler = self._handler({"j1": -1.5708001, "j2": 0.5}, {"j1": (-1.5707963, 1.5707963), "j2": (-1.0, 1.0)})
+        state = handler._start_state("top", self._Arm())
+        assert list(state.name) == ["j1", "j2"]
+        assert list(state.position) == [-1.5707963, 0.5]
+
+    def test_a_joint_far_outside_its_limit_gets_no_start_state(self) -> None:
+        handler = self._handler({"j1": -1.8, "j2": 0.5}, {"j1": (-1.0, 1.0), "j2": (-1.0, 1.0)})
+        assert handler._start_state("top", self._Arm()) is None
+
+    def test_a_joint_without_a_reading_gets_no_start_state(self) -> None:
+        handler = self._handler({"j1": 0.0}, {"j1": (-1.0, 1.0), "j2": (-1.0, 1.0)})
+        assert handler._start_state("top", self._Arm()) is None
+
+
 class TestAllowContact:
     def test_object_may_touch_exactly_the_given_links(self) -> None:
         from arena_robots.task_server_handlers.reach_pose.moveit import _allow_contact
@@ -329,3 +373,96 @@ class TestGuardStep:
         from arena_robots.task_server_handlers.reach_pose.moveit import _guard_step
 
         assert _guard_step(guard, _state(0.0, 0.0, 0.0, position=math.nan)).startswith("arm state not finite: joint arm_2_joint")
+
+
+class _FakeMoveIt:
+    """move_group's parameter, plan and execute endpoints, execution ending only on a trajectory_execution_event stop."""
+
+    def __init__(self, node, bringup, group) -> None:
+        from moveit_msgs.action import ExecuteTrajectory, MoveGroup
+        from rcl_interfaces.msg import ParameterType, ParameterValue
+        from rcl_interfaces.srv import GetParameters
+        from std_msgs.msg import String
+
+        ns = bringup.arm_namespace("arm")
+        self.executing = False
+        self.events: list[str] = []
+
+        def on_parameters(_request, response):
+            response.values = [ParameterValue(type=ParameterType.PARAMETER_STRING, string_value='<robot name="r"><link name="tool0"/></robot>')]
+            return response
+
+        def on_plan(goal_handle):
+            goal_handle.succeed()
+            result = MoveGroup.Result()
+            result.error_code.val = 1
+            return result
+
+        async def on_execute(goal_handle):
+            from arena_robots.task_server_handlers import _executor_sleep
+
+            self.executing = True
+            while "stop" not in self.events:
+                await _executor_sleep(node, 0.02, wall=True)
+            goal_handle.abort()
+            result = ExecuteTrajectory.Result()
+            result.error_code.val = -7
+            return result
+
+        node.create_service(GetParameters, str(ns("move_group", "get_parameters")), on_parameters, callback_group=group)
+        node.create_subscription(String, str(ns("trajectory_execution_event")), lambda msg: self.events.append(msg.data), 10, callback_group=group)
+        self._servers = [
+            ActionServer(node, MoveGroup, str(ns("move_action")), execute_callback=on_plan, callback_group=group),
+            ActionServer(node, ExecuteTrajectory, str(ns("execute_trajectory")), execute_callback=on_execute, cancel_callback=lambda _handle: rclpy.action.CancelResponse.ACCEPT, callback_group=group),
+        ]
+
+
+@pytest.fixture
+def moveit_rig(tmp_path: Path) -> Iterator[tuple[ActionClient, _FakeMoveIt]]:
+    import rclpy.action
+
+    from arena_robots.bringup.arm.moveit import MoveItArmBringup
+    from arena_robots.Robot import RobotView
+    from arena_robots.task_server_handlers.reach_pose.moveit import ReachPoseHandlerMoveIt
+
+    owned = not rclpy.ok()
+    if owned:
+        rclpy.init()
+    ns = f"/reach_pose_{uuid.uuid4().hex[:8]}"
+    node = rclpy.create_node("reach_pose_moveit", namespace=ns)
+    peer = rclpy.create_node("move_group_fake", namespace=ns)
+    bringup = MoveItArmBringup(RobotView(_robot_dir(tmp_path)), ns)
+    handler = ReachPoseHandlerMoveIt(bringup, tf_buffer=Buffer(), node=node)
+    group = ReentrantCallbackGroup()
+    moveit = _FakeMoveIt(peer, bringup, group)
+    ActionServer(node, ReachPose, f"{ns}/reach_pose", execute_callback=handler.execute, cancel_callback=handler.on_cancel, callback_group=group)
+    client = ActionClient(node, ReachPose, f"{ns}/reach_pose", callback_group=group)
+    executor = MultiThreadedExecutor(num_threads=6)
+    executor.add_node(node)
+    executor.add_node(peer)
+    thread = threading.Thread(target=executor.spin, daemon=True)
+    thread.start()
+    try:
+        assert client.wait_for_server(timeout_sec=30.0)
+        yield client, moveit
+    finally:
+        executor.shutdown()
+        peer.destroy_node()
+        node.destroy_node()
+        if owned:
+            rclpy.shutdown()
+
+
+class TestCancelDuringExecution:
+    def test_cancel_stops_the_executing_trajectory(self, moveit_rig) -> None:
+        client, moveit = moveit_rig
+        handle = _wait(client.send_goal_async(_goal()))
+        assert handle.accepted
+        deadline = time.monotonic() + 30.0
+        while not moveit.executing:
+            assert time.monotonic() < deadline, "execution never started"
+            time.sleep(0.02)
+        _wait(handle.cancel_goal_async())
+        result = _wait(handle.get_result_async()).result
+        assert moveit.events == ["stop"]
+        assert result.status == ReachPose.Result.STATUS_CANCELED
