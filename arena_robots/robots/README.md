@@ -204,6 +204,10 @@ planning group unless the package's kinematics file already names it, and maps t
 `tiago` declares its own `srdf/arm.srdf.xacro` and `srdf/joint_limits.yaml` this way; the `fr3`
 component does the same under `components/arm/fr3`.
 
+The pipelines of a block without `package` are OMPL (the default) and Pilz, which `motion: linear`
+reaches use. `moveit.cartesian_limits` sets the Pilz limits per arm over the defaults
+`max_trans_vel: 0.5`, `max_trans_acc: 1.0`, `max_trans_dec: -1.0`, `max_rot_vel: 1.57`.
+
 For platforms that ship an upstream SRDF, structural primitives can be derived
 from it; `controller:` and adapter sub-blocks stay authored:
 

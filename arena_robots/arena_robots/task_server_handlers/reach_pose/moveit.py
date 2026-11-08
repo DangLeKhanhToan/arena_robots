@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import copy
 from typing import TYPE_CHECKING
 
+import rclpy.time
 from action_msgs.msg import GoalStatus
 from arena_robots_msgs.action import ReachPose
 from control_msgs.msg import JointTrajectoryControllerState
+from geometry_msgs.msg import Pose, PoseStamped
 from moveit_msgs.action import MoveGroup
 from moveit_msgs.msg import (
     Constraints,
@@ -16,6 +19,7 @@ from moveit_msgs.msg import (
 )
 from rclpy.action import ActionClient
 from shape_msgs.msg import SolidPrimitive
+from tf2_ros import TransformException
 
 from arena_robots.lockstep_beat import LockstepBeat
 from arena_robots.task_server_handlers import NativeGoals, TaskHandler, _executor_sleep
@@ -33,6 +37,28 @@ _DEFAULT_POSITION_TOLERANCE = 0.01
 _DEFAULT_ORIENTATION_TOLERANCE = 0.1
 _DEFAULT_PLANNING_TIME = 5.0
 _ARM_BEAT_PERIOD = 0.1
+_PILZ = "pilz_industrial_motion_planner"
+_MOTIONS = ("", "free", "linear")
+
+
+def _quat_mul(a: Pose, b: Pose) -> tuple[float, float, float, float]:
+    qa, qb = a.orientation, b.orientation
+    return (
+        qa.w * qb.x + qa.x * qb.w + qa.y * qb.z - qa.z * qb.y,
+        qa.w * qb.y - qa.x * qb.z + qa.y * qb.w + qa.z * qb.x,
+        qa.w * qb.z + qa.x * qb.y - qa.y * qb.x + qa.z * qb.w,
+        qa.w * qb.w - qa.x * qb.x - qa.y * qb.y - qa.z * qb.z,
+    )
+
+
+def _compose_offset(tool: Pose, offset: Pose) -> Pose:
+    """The pose `offset` applied to `tool`: positions add, the offset rotation multiplies on the left."""
+    out = Pose()
+    out.position.x = tool.position.x + offset.position.x
+    out.position.y = tool.position.y + offset.position.y
+    out.position.z = tool.position.z + offset.position.z
+    out.orientation.x, out.orientation.y, out.orientation.z, out.orientation.w = _quat_mul(offset, tool)
+    return out
 
 
 def _translate_moveit_status(code: int) -> tuple[int, str]:
@@ -69,6 +95,18 @@ class ReachPoseHandlerMoveIt(TaskHandler[ReachPose.Goal, ReachPose.Feedback, Rea
     def _on_controller_state(self, msg: JointTrajectoryControllerState) -> None:
         self._beat.pulse(msg.header.stamp)
 
+    def _tool_pose(self, arm: ArmSpec, frame: str) -> Pose | None:
+        try:
+            transform = self._tf_buffer.lookup_transform(frame, self._tf_prefix + arm.tip_link, rclpy.time.Time())
+        except TransformException:
+            return None
+        pose = Pose()
+        pose.position.x = transform.transform.translation.x
+        pose.position.y = transform.transform.translation.y
+        pose.position.z = transform.transform.translation.z
+        pose.orientation = transform.transform.rotation
+        return pose
+
     def on_cancel(self, goal_handle: ServerGoalHandle) -> CancelResponse:
         return self._native_goals.cancel(goal_handle)
 
@@ -92,6 +130,23 @@ class ReachPoseHandlerMoveIt(TaskHandler[ReachPose.Goal, ReachPose.Feedback, Rea
         arm = arms[mount]
         native_client = self._native_clients[mount]
 
+        if arena_goal.motion not in _MOTIONS or (arena_goal.motion == "linear" and arena_goal.named_target):
+            goal_handle.abort()
+            result.status = ReachPose.Result.STATUS_ABORTED
+            result.reason = f"motion {arena_goal.motion!r} unsupported{' with a named target' if arena_goal.named_target else ''}, known: {list(_MOTIONS)}"
+            return result
+
+        if arena_goal.relative and not arena_goal.named_target:
+            frame = arena_goal.target.header.frame_id
+            tool = self._tool_pose(arm, frame)
+            if tool is None:
+                goal_handle.abort()
+                result.status = ReachPose.Result.STATUS_ABORTED
+                result.reason = f"relative reach: no transform from {self._tf_prefix + arm.tip_link!r} to {frame!r}"
+                return result
+            arena_goal = copy.deepcopy(arena_goal)
+            arena_goal.target.pose = _compose_offset(tool, arena_goal.target.pose)
+
         mg_goal = self._build_goal(arena_goal, arm)
         if mg_goal is None:
             goal_handle.abort()
@@ -108,17 +163,26 @@ class ReachPoseHandlerMoveIt(TaskHandler[ReachPose.Goal, ReachPose.Feedback, Rea
 
         await self._beat.acquire(_ARM_BEAT_PERIOD)
         try:
-            return await self._dispatch(goal_handle, native_client, mg_goal, result)
+            frame = self._tf_prefix + arm.base_link if arena_goal.named_target else arena_goal.target.header.frame_id
+            return await self._dispatch(goal_handle, native_client, mg_goal, result, arm, frame)
         finally:
             await self._beat.release()
 
-    async def _dispatch(self, goal_handle: ServerGoalHandle, native_client: ActionClient, mg_goal: MoveGroup.Goal, result: ReachPose.Result) -> ReachPose.Result:
+    @staticmethod
+    def _publish_feedback(goal_handle: ServerGoalHandle, state: str, progress: float) -> None:
+        feedback = ReachPose.Feedback()
+        feedback.state = state
+        feedback.progress = progress
+        goal_handle.publish_feedback(feedback)
+
+    async def _dispatch(self, goal_handle: ServerGoalHandle, native_client: ActionClient, mg_goal: MoveGroup.Goal, result: ReachPose.Result, arm: ArmSpec, frame: str) -> ReachPose.Result:
         if goal_handle.is_cancel_requested:
             goal_handle.canceled()
             result.status = ReachPose.Result.STATUS_CANCELED
             result.reason = "goal canceled by client"
             return result
 
+        self._publish_feedback(goal_handle, "PLANNING", 0.0)
         send_future = native_client.send_goal_async(mg_goal)
         native_handle = await send_future
 
@@ -128,6 +192,7 @@ class ReachPoseHandlerMoveIt(TaskHandler[ReachPose.Goal, ReachPose.Feedback, Rea
             result.reason = "MoveIt MotionPlanRequest aborted"
             return result
 
+        self._publish_feedback(goal_handle, "EXECUTING", 0.5)
         with self._native_goals.tracking(goal_handle, native_handle):
             wrapped = await native_handle.get_result_async()
         if not goal_handle.is_active:
@@ -144,6 +209,7 @@ class ReachPoseHandlerMoveIt(TaskHandler[ReachPose.Goal, ReachPose.Feedback, Rea
             arena_reason = "goal canceled by client"
 
         if arena_status == ReachPose.Result.STATUS_SUCCEEDED:
+            self._publish_feedback(goal_handle, "DONE", 1.0)
             goal_handle.succeed()
         elif arena_status == ReachPose.Result.STATUS_CANCELED:
             goal_handle.canceled()
@@ -152,7 +218,15 @@ class ReachPoseHandlerMoveIt(TaskHandler[ReachPose.Goal, ReachPose.Feedback, Rea
 
         result.status = arena_status
         result.reason = arena_reason
+        self._fill_final_pose(result, arm, frame)
         return result
+
+    def _fill_final_pose(self, result: ReachPose.Result, arm: ArmSpec, frame: str) -> None:
+        pose = self._tool_pose(arm, frame)
+        if pose is not None:
+            result.final_pose = PoseStamped()
+            result.final_pose.header.frame_id = frame
+            result.final_pose.pose = pose
 
     def _build_goal(self, arena_goal: ReachPose.Goal, arm: ArmSpec) -> MoveGroup.Goal | None:
         constraints = Constraints()
@@ -200,8 +274,12 @@ class ReachPoseHandlerMoveIt(TaskHandler[ReachPose.Goal, ReachPose.Feedback, Rea
         mg_goal.request.goal_constraints.append(constraints)  # pyright: ignore[reportAttributeAccessIssue]
         mg_goal.request.allowed_planning_time = float(arena_goal.planning_time or _DEFAULT_PLANNING_TIME)
         mg_goal.request.num_planning_attempts = 5
-        mg_goal.request.max_velocity_scaling_factor = 1.0
-        mg_goal.request.max_acceleration_scaling_factor = 1.0
+        speed = float(arena_goal.speed or 1.0)
+        mg_goal.request.max_velocity_scaling_factor = speed
+        mg_goal.request.max_acceleration_scaling_factor = speed
+        if arena_goal.motion == "linear":
+            mg_goal.request.pipeline_id = _PILZ
+            mg_goal.request.planner_id = "LIN"
         # is_diff=true means "use the current robot state as start; ignore the (empty) joint_state I'm sending".
         # Without this, MoveIt warns every goal that it's ignoring our supplied start state.
         mg_goal.request.start_state.is_diff = True

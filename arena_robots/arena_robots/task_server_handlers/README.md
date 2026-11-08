@@ -126,3 +126,15 @@ entry.
 - **No fallback handlers.** A bringup either declares a `TaskKind` in
   `task_handlers` or it doesn't; `task_server` skips advertising that
   endpoint when missing instead of silently degrading.
+
+## Reach pose on MoveIt
+
+`reach_pose/moveit.py` plans every `ReachPose` goal through the arm's `move_group`. Goal fields beyond the target:
+
+| Field | Effect |
+|---|---|
+| `motion` | `""` or `free` plans with OMPL, `linear` moves the tool along a straight line (Pilz `LIN` in the `pilz_industrial_motion_planner` pipeline). `linear` with a `named_target` and any other value abort the goal. |
+| `speed` | Scales velocity and acceleration, `0.0` means `1.0`. |
+| `relative` | The target is an offset from the tool pose: the tip is looked up in `target.header.frame_id` at goal time, positions add and the offset rotation multiplies the tip rotation. A failed lookup aborts the goal with a reason naming both frames. |
+
+The handler publishes `PLANNING` before it sends the request to MoveIt, `EXECUTING` once MoveIt accepted it and `DONE` on success. The result carries `final_pose`, the tip pose in the target frame (the arm's base link frame for a named target), empty when the lookup fails.
