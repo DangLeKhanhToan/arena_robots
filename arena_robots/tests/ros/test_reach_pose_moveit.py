@@ -1,4 +1,4 @@
-"""Tests for the MoveIt reach handler: goal building, request validation and the pure helpers of linear motion and relative targets."""
+"""Tests for the MoveIt reach handler: goal building, request validation and the pure helpers of linear motion, relative targets and contact."""
 
 from __future__ import annotations
 
@@ -16,6 +16,8 @@ rclpy = pytest.importorskip("rclpy")
 
 from arena_robots_msgs.action import ReachPose
 from geometry_msgs.msg import Pose
+from control_msgs.msg import JointTrajectoryControllerState
+from moveit_msgs.msg import AllowedCollisionEntry, AllowedCollisionMatrix
 from rclpy.action import ActionClient, ActionServer
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
@@ -174,3 +176,156 @@ class TestComposeOffset:
         tool = _yaw(0.7)
         out = _compose_offset(tool, offset)
         assert (out.orientation.z, out.orientation.w) == pytest.approx((tool.orientation.z, tool.orientation.w))
+
+
+class TestDescendantLinks:
+    _URDF = """<robot name="r">
+      <link name="base"/><link name="tip"/><link name="hand"/><link name="finger_l"/><link name="finger_r"/><link name="elbow"/>
+      <joint name="j0" type="fixed"><parent link="base"/><child link="elbow"/></joint>
+      <joint name="j1" type="fixed"><parent link="elbow"/><child link="tip"/></joint>
+      <joint name="j2" type="fixed"><parent link="tip"/><child link="hand"/></joint>
+      <joint name="j3" type="fixed"><parent link="hand"/><child link="finger_l"/></joint>
+      <joint name="j4" type="fixed"><parent link="hand"/><child link="finger_r"/></joint>
+    </robot>"""
+
+    def test_returns_the_tip_and_everything_below_it(self) -> None:
+        from arena_robots.task_server_handlers.reach_pose.moveit import _descendant_links
+
+        assert _descendant_links(self._URDF, "tip") == {"tip", "hand", "finger_l", "finger_r"}
+
+    def test_a_leaf_link_is_its_own_subtree(self) -> None:
+        from arena_robots.task_server_handlers.reach_pose.moveit import _descendant_links
+
+        assert _descendant_links(self._URDF, "finger_l") == {"finger_l"}
+
+
+def _matrix(names: list[str], pairs: set[tuple[str, str]]) -> AllowedCollisionMatrix:
+    acm = AllowedCollisionMatrix()
+    acm.entry_names = names
+    acm.entry_values = [AllowedCollisionEntry(enabled=[(a, b) in pairs or (b, a) in pairs for b in names]) for a in names]
+    return acm
+
+
+def _allowed(acm: AllowedCollisionMatrix, a: str, b: str) -> bool:
+    return bool(acm.entry_values[acm.entry_names.index(a)].enabled[acm.entry_names.index(b)])
+
+
+class TestArmLinks:
+    _URDF = """<robot name="r">
+      <link name="base"/><link name="shoulder"/><link name="elbow"/><link name="wrist"/><link name="tip"/><link name="hand"/><link name="finger"/>
+      <joint name="j0" type="revolute"><parent link="base"/><child link="shoulder"/></joint>
+      <joint name="j1" type="revolute"><parent link="shoulder"/><child link="elbow"/></joint>
+      <joint name="j2" type="revolute"><parent link="elbow"/><child link="wrist"/></joint>
+      <joint name="j3" type="revolute"><parent link="wrist"/><child link="tip"/></joint>
+      <joint name="j4" type="fixed"><parent link="tip"/><child link="hand"/></joint>
+      <joint name="j5" type="fixed"><parent link="hand"/><child link="finger"/></joint>
+    </robot>"""
+
+    def test_chain_joint_links_join_the_tip_subtree(self) -> None:
+        from arena_robots.task_server_handlers.reach_pose.moveit import _arm_links
+
+        assert _arm_links(self._URDF, "tip", ["j0", "j1", "j2", "j3"]) == {"shoulder", "elbow", "wrist", "tip", "hand", "finger"}
+
+    def test_a_chain_naming_unknown_joints_adds_nothing(self) -> None:
+        from arena_robots.task_server_handlers.reach_pose.moveit import _arm_links
+
+        assert _arm_links(self._URDF, "tip", ["missing"]) == {"tip", "hand", "finger"}
+
+
+class TestAllowContact:
+    def test_object_may_touch_exactly_the_given_links(self) -> None:
+        from arena_robots.task_server_handlers.reach_pose.moveit import _allow_contact
+
+        acm = _matrix(["base", "tip", "hand"], {("base", "tip")})
+        out = _allow_contact(acm, "arena/chest/drawer", frozenset({"tip", "hand"}))
+        assert _allowed(out, "arena/chest/drawer", "tip")
+        assert _allowed(out, "hand", "arena/chest/drawer")
+        assert not _allowed(out, "arena/chest/drawer", "base")
+        assert not _allowed(out, "arena/chest/drawer", "arena/chest/drawer")
+
+    def test_existing_entries_survive(self) -> None:
+        from arena_robots.task_server_handlers.reach_pose.moveit import _allow_contact
+
+        acm = _matrix(["base", "tip"], {("base", "tip")})
+        out = _allow_contact(acm, "obj", frozenset({"tip"}))
+        assert _allowed(out, "base", "tip")
+        assert _allowed(out, "tip", "base")
+
+    def test_links_missing_from_the_matrix_are_added(self) -> None:
+        from arena_robots.task_server_handlers.reach_pose.moveit import _allow_contact
+
+        acm = _matrix(["base"], set())
+        out = _allow_contact(acm, "obj", frozenset({"finger"}))
+        assert set(out.entry_names) == {"base", "obj", "finger"}
+        assert _allowed(out, "obj", "finger")
+        assert all(len(entry.enabled) == len(out.entry_names) for entry in out.entry_values)
+
+    def test_reusing_an_object_resets_its_row(self) -> None:
+        from arena_robots.task_server_handlers.reach_pose.moveit import _allow_contact
+
+        acm = _matrix(["base", "tip", "obj"], {("obj", "base")})
+        out = _allow_contact(acm, "obj", frozenset({"tip"}))
+        assert not _allowed(out, "obj", "base")
+        assert _allowed(out, "obj", "tip")
+        assert len(out.entry_names) == 3
+
+    def test_input_matrix_is_not_modified(self) -> None:
+        from arena_robots.task_server_handlers.reach_pose.moveit import _allow_contact
+
+        acm = _matrix(["base"], set())
+        _allow_contact(acm, "obj", frozenset({"tip"}))
+        assert list(acm.entry_names) == ["base"]
+
+
+class TestArmSpecStallTunables:
+    def test_defaults(self, tmp_path: Path) -> None:
+        arm = ArmSpec(path=tmp_path, raw=dict(_ARM_ENTRY), name="arm")
+        assert (arm.stall_error, arm.stall_speed, arm.stall_time, arm.scene_radius) == (0.2, 0.05, 0.5, 1.5)
+
+    def test_arm_block_values_win(self, tmp_path: Path) -> None:
+        arm = ArmSpec(path=tmp_path, raw={**_ARM_ENTRY, "stall_error": 0.35, "stall_time": 1.25, "scene_radius": 2.0}, name="arm")
+        assert (arm.stall_error, arm.stall_time, arm.scene_radius) == (0.35, 1.25, 2.0)
+
+
+def _state(t: float, error: float, speed: float, position: float = 0.0) -> JointTrajectoryControllerState:
+    msg = JointTrajectoryControllerState()
+    msg.header.stamp.sec = int(t)
+    msg.header.stamp.nanosec = int((t - int(t)) * 1e9)
+    msg.joint_names = ["arm_1_joint", "arm_2_joint"]
+    msg.feedback.positions = [0.0, position]
+    msg.feedback.velocities = [0.0, speed]
+    msg.error.positions = [0.01, error]
+    return msg
+
+
+class TestGuardStep:
+    @pytest.fixture
+    def guard(self, tmp_path: Path):
+        from arena_robots.task_server_handlers.reach_pose.moveit import _Guard
+
+        return _Guard(arm=ArmSpec(path=tmp_path, raw=dict(_ARM_ENTRY), name="arm"), native_handle=None)
+
+    def test_a_lagging_joint_that_still_moves_is_not_blocked(self, guard) -> None:
+        from arena_robots.task_server_handlers.reach_pose.moveit import _guard_step
+
+        assert [_guard_step(guard, _state(t / 10, 0.5, 0.8)) for t in range(20)] == [""] * 20
+
+    def test_a_stopped_joint_with_a_large_error_is_blocked_after_the_stall_time(self, guard) -> None:
+        from arena_robots.task_server_handlers.reach_pose.moveit import _guard_step
+
+        reasons = [_guard_step(guard, _state(t / 10, 0.5, 0.0)) for t in range(7)]
+        assert reasons[:5] == [""] * 5
+        assert reasons[5].startswith("arm blocked: joint arm_2_joint")
+
+    def test_moving_again_restarts_the_stall_clock(self, guard) -> None:
+        from arena_robots.task_server_handlers.reach_pose.moveit import _guard_step
+
+        for t in range(4):
+            assert _guard_step(guard, _state(t / 10, 0.5, 0.0)) == ""
+        assert _guard_step(guard, _state(0.4, 0.5, 0.8)) == ""
+        assert [_guard_step(guard, _state(0.5 + t / 10, 0.5, 0.0)) for t in range(5)] == [""] * 5
+
+    def test_a_non_finite_position_is_reported_at_once(self, guard) -> None:
+        from arena_robots.task_server_handlers.reach_pose.moveit import _guard_step
+
+        assert _guard_step(guard, _state(0.0, 0.0, 0.0, position=math.nan)).startswith("arm state not finite: joint arm_2_joint")

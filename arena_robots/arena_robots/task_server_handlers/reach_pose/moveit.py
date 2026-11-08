@@ -1,6 +1,11 @@
 from __future__ import annotations
 
 import copy
+import dataclasses
+import math
+import time
+import xml.etree.ElementTree as ET
+from functools import partial
 from typing import TYPE_CHECKING
 
 import rclpy.time
@@ -10,13 +15,19 @@ from control_msgs.msg import JointTrajectoryControllerState
 from geometry_msgs.msg import Pose, PoseStamped
 from moveit_msgs.action import MoveGroup
 from moveit_msgs.msg import (
+    AllowedCollisionEntry,
+    AllowedCollisionMatrix,
     Constraints,
     JointConstraint,
     MotionPlanRequest,
     MoveItErrorCodes,
     OrientationConstraint,
+    PlanningScene,
+    PlanningSceneComponents,
     PositionConstraint,
 )
+from moveit_msgs.srv import GetPlanningScene
+from rcl_interfaces.srv import GetParameters
 from rclpy.action import ActionClient
 from shape_msgs.msg import SolidPrimitive
 from tf2_ros import TransformException
@@ -25,8 +36,12 @@ from arena_robots.lockstep_beat import LockstepBeat
 from arena_robots.task_server_handlers import NativeGoals, TaskHandler, _executor_sleep
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from rclpy.action import CancelResponse
+    from rclpy.action.client import ClientGoalHandle
     from rclpy.action.server import ServerGoalHandle
+    from rclpy.client import Client
     from rclpy.node import Node
     from tf2_ros import Buffer
 
@@ -39,6 +54,19 @@ _DEFAULT_PLANNING_TIME = 5.0
 _ARM_BEAT_PERIOD = 0.1
 _PILZ = "pilz_industrial_motion_planner"
 _MOTIONS = ("", "free", "linear")
+_SERVICE_TIMEOUT = 10.0
+
+
+class _ReachAbort(Exception):
+    pass
+
+
+@dataclasses.dataclass
+class _Guard:
+    arm: ArmSpec
+    native_handle: ClientGoalHandle
+    stall_since: float | None = None
+    violation: str = ""
 
 
 def _quat_mul(a: Pose, b: Pose) -> tuple[float, float, float, float]:
@@ -59,6 +87,79 @@ def _compose_offset(tool: Pose, offset: Pose) -> Pose:
     out.position.z = tool.position.z + offset.position.z
     out.orientation.x, out.orientation.y, out.orientation.z, out.orientation.w = _quat_mul(offset, tool)
     return out
+
+
+def _descendant_links(urdf: str, root_link: str) -> frozenset[str]:
+    children: dict[str, list[str]] = {}
+    for joint in ET.fromstring(urdf).iter("joint"):
+        parent, child = joint.find("parent"), joint.find("child")
+        if parent is not None and child is not None:
+            children.setdefault(parent.get("link", ""), []).append(child.get("link", ""))
+    found = {root_link}
+    frontier = [root_link]
+    while frontier:
+        for child in children.get(frontier.pop(), []):
+            if child not in found:
+                found.add(child)
+                frontier.append(child)
+    return frozenset(found)
+
+
+def _arm_links(urdf: str, root_link: str, chain: Sequence[str]) -> frozenset[str]:
+    """The tip subtree plus the link every chain joint drives, the whole arm from below its base."""
+    child_of: dict[str, str] = {}
+    for joint in ET.fromstring(urdf).iter("joint"):
+        child = joint.find("child")
+        if child is not None:
+            child_of[joint.get("name", "")] = child.get("link", "")
+    links = set(_descendant_links(urdf, root_link))
+    links.update(child_of[joint] for joint in chain if joint in child_of)
+    return frozenset(links)
+
+
+def _allow_contact(acm: AllowedCollisionMatrix, object_id: str, links: frozenset[str]) -> AllowedCollisionMatrix:
+    """A copy of `acm` where `object_id` may collide with exactly `links` and every other entry is kept."""
+    names = list(acm.entry_names)
+    rows = [list(entry.enabled) for entry in acm.entry_values]
+    for name in (object_id, *sorted(links)):
+        if name not in names:
+            names.append(name)
+            for row in rows:
+                row.append(False)
+            rows.append([False] * len(names))
+    index = names.index(object_id)
+    for i, name in enumerate(names):
+        allowed = name in links
+        rows[index][i] = allowed
+        rows[i][index] = allowed
+    rows[index][index] = False
+    out = copy.deepcopy(acm)
+    out.entry_names = names
+    out.entry_values = [AllowedCollisionEntry(enabled=row) for row in rows]
+    return out
+
+
+def _guard_step(guard: _Guard, msg: JointTrajectoryControllerState) -> str:
+    """The violation one controller state message shows for `guard`, empty while the arm is fine."""
+    for name, position in zip(msg.joint_names, msg.feedback.positions, strict=False):
+        if not math.isfinite(position):
+            return f"arm state not finite: joint {name} position {position}"
+    errors = [(abs(error), name, index) for index, (name, error) in enumerate(zip(msg.joint_names, msg.error.positions, strict=False))]
+    if not errors:
+        return ""
+    worst, joint, index = max(errors)
+    if not math.isfinite(worst):
+        return f"arm state not finite: joint {joint} error {worst}"
+    velocities = msg.feedback.velocities
+    speed = abs(velocities[index]) if index < len(velocities) else 0.0
+    stamp = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
+    if worst <= guard.arm.stall_error or speed > guard.arm.stall_speed:
+        guard.stall_since = None
+    elif guard.stall_since is None:
+        guard.stall_since = stamp
+    elif stamp - guard.stall_since >= guard.arm.stall_time:
+        return f"arm blocked: joint {joint} error {worst:.3f} rad above {guard.arm.stall_error} at {speed:.3f} rad/s for {guard.arm.stall_time} s"
+    return ""
 
 
 def _translate_moveit_status(code: int) -> tuple[int, str]:
@@ -84,16 +185,31 @@ class ReachPoseHandlerMoveIt(TaskHandler[ReachPose.Goal, ReachPose.Feedback, Rea
         self._native_clients: dict[str, ActionClient] = {mount: ActionClient(node, MoveGroup, str(bringup.arm_namespace(mount)("move_action"))) for mount in bringup.arms()}
         self._beat = LockstepBeat(node, "reach")
         self._native_goals = NativeGoals()
+        self._guards: dict[str, _Guard] = {}
+        self._scene_clients = {mount: node.create_client(GetPlanningScene, str(bringup.arm_namespace(mount)("get_planning_scene"))) for mount in bringup.arms()}
+        self._param_clients = {mount: node.create_client(GetParameters, str(bringup.arm_namespace(mount)("move_group", "get_parameters"))) for mount in bringup.arms()}
+        self._models: dict[str, frozenset[str]] = {}
         for mount, arm in bringup.arms().items():
             node.create_subscription(
                 JointTrajectoryControllerState,
                 str(bringup.arm_namespace(mount)(arm.controller, "controller_state")),
-                self._on_controller_state,
+                partial(self._on_controller_state, mount),
                 10,
             )
 
-    def _on_controller_state(self, msg: JointTrajectoryControllerState) -> None:
+    def _on_controller_state(self, mount: str, msg: JointTrajectoryControllerState) -> None:
         self._beat.pulse(msg.header.stamp)
+        guard = self._guards.get(mount)
+        if guard is None or guard.violation:
+            return
+        reason = _guard_step(guard, msg)
+        if reason:
+            self._violate(guard, reason)
+
+    @staticmethod
+    def _violate(guard: _Guard, reason: str) -> None:
+        guard.violation = reason
+        guard.native_handle.cancel_goal_async()
 
     def _tool_pose(self, arm: ArmSpec, frame: str) -> Pose | None:
         try:
@@ -106,6 +222,42 @@ class ReachPoseHandlerMoveIt(TaskHandler[ReachPose.Goal, ReachPose.Feedback, Rea
         pose.position.z = transform.transform.translation.z
         pose.orientation = transform.transform.rotation
         return pose
+
+    async def _call[Req, Res](self, client: Client, request: Req, what: str) -> Res:
+        deadline = time.monotonic() + _SERVICE_TIMEOUT
+        while not client.service_is_ready():
+            if time.monotonic() > deadline:
+                raise _ReachAbort(f"{what} service unavailable")
+            await _executor_sleep(self._node, 0.1, wall=True)
+        response = await client.call_async(request)
+        if response is None:
+            raise _ReachAbort(f"{what} returned no response")
+        return response
+
+    async def _model(self, mount: str, arm: ArmSpec) -> frozenset[str]:
+        """Links that may touch a contact object, from move_group's URDF."""
+        if mount not in self._models:
+            request = GetParameters.Request()
+            request.names = ["robot_description"]
+            response = await self._call(self._param_clients[mount], request, "move_group get_parameters")
+            urdf = response.values[0].string_value if response.values else ""
+            if not urdf:
+                raise _ReachAbort("move_group has no robot_description")
+            self._models[mount] = _arm_links(urdf, self._tf_prefix + arm.tip_link, arm.chain)
+        return self._models[mount]
+
+    async def _contact_scene(self, mount: str, arm: ArmSpec, object_ids: Sequence[str]) -> PlanningScene:
+        links = await self._model(mount, arm)
+        request = GetPlanningScene.Request()
+        request.components.components = PlanningSceneComponents.ALLOWED_COLLISION_MATRIX
+        response = await self._call(self._scene_clients[mount], request, "move_group get_planning_scene")
+        scene = PlanningScene()
+        scene.is_diff = True
+        acm = response.scene.allowed_collision_matrix
+        for object_id in object_ids:
+            acm = _allow_contact(acm, object_id, links)
+        scene.allowed_collision_matrix = acm
+        return scene
 
     def on_cancel(self, goal_handle: ServerGoalHandle) -> CancelResponse:
         return self._native_goals.cancel(goal_handle)
@@ -163,8 +315,15 @@ class ReachPoseHandlerMoveIt(TaskHandler[ReachPose.Goal, ReachPose.Feedback, Rea
 
         await self._beat.acquire(_ARM_BEAT_PERIOD)
         try:
+            if arena_goal.contact:
+                mg_goal.planning_options.planning_scene_diff = await self._contact_scene(mount, arm, list(arena_goal.contact))
             frame = self._tf_prefix + arm.base_link if arena_goal.named_target else arena_goal.target.header.frame_id
-            return await self._dispatch(goal_handle, native_client, mg_goal, result, arm, frame)
+            return await self._dispatch(goal_handle, native_client, mg_goal, result, mount, arm, frame)
+        except _ReachAbort as exc:
+            goal_handle.abort()
+            result.status = ReachPose.Result.STATUS_ABORTED
+            result.reason = str(exc)
+            return result
         finally:
             await self._beat.release()
 
@@ -175,7 +334,7 @@ class ReachPoseHandlerMoveIt(TaskHandler[ReachPose.Goal, ReachPose.Feedback, Rea
         feedback.progress = progress
         goal_handle.publish_feedback(feedback)
 
-    async def _dispatch(self, goal_handle: ServerGoalHandle, native_client: ActionClient, mg_goal: MoveGroup.Goal, result: ReachPose.Result, arm: ArmSpec, frame: str) -> ReachPose.Result:
+    async def _dispatch(self, goal_handle: ServerGoalHandle, native_client: ActionClient, mg_goal: MoveGroup.Goal, result: ReachPose.Result, mount: str, arm: ArmSpec, frame: str) -> ReachPose.Result:
         if goal_handle.is_cancel_requested:
             goal_handle.canceled()
             result.status = ReachPose.Result.STATUS_CANCELED
@@ -193,8 +352,19 @@ class ReachPoseHandlerMoveIt(TaskHandler[ReachPose.Goal, ReachPose.Feedback, Rea
             return result
 
         self._publish_feedback(goal_handle, "EXECUTING", 0.5)
-        with self._native_goals.tracking(goal_handle, native_handle):
-            wrapped = await native_handle.get_result_async()
+        guard = _Guard(arm=arm, native_handle=native_handle)
+        self._guards[mount] = guard
+        try:
+            with self._native_goals.tracking(goal_handle, native_handle):
+                wrapped = await native_handle.get_result_async()
+        finally:
+            self._guards.pop(mount, None)
+        if guard.violation and goal_handle.is_active:
+            goal_handle.abort()
+            result.status = ReachPose.Result.STATUS_ABORTED
+            result.reason = guard.violation
+            self._fill_final_pose(result, arm, frame)
+            return result
         if not goal_handle.is_active:
             result.status = ReachPose.Result.STATUS_CANCELED
             result.reason = "goal canceled by client"

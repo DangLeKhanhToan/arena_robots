@@ -592,7 +592,7 @@ async def robots_reach(
     roll: float = 0.0,
     pitch: float = 0.0,
     yaw: float = 0.0,
-    frame: Annotated[str | None, Field(description="frame of the Cartesian target, the robot's base frame by default")] = None,
+    frame: Annotated[str | None, Field(description="frame of the Cartesian target, the robot's base frame by default, also an episode object name or <object>/<link>")] = None,
     motion: Annotated[Literal["free", "linear"], Field(description="free plans around obstacles, linear moves the tool along a straight line")] = "free",
     speed: Annotated[float, Field(ge=0, le=1, description="velocity and acceleration scale in (0, 1], 0 = full speed")] = 0.0,
     relative: Annotated[bool, Field(description="target is an offset from the current tool pose, expressed in frame")] = False,

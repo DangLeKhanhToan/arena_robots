@@ -37,13 +37,17 @@ class ReachPoseClient(Client):
     async def wait_ready(self) -> None:
         await self._action.ensure()
 
-    async def send_goal(self, goal: object) -> object:
+    def reset(self) -> None:
+        """Forget the previous goal's result, so a phase still preparing its goal reads as running."""
         self._done = False
         self._result = None
         self._status = None
         self._reason = None
         self._feedback = None
         self._result_future = None
+
+    async def send_goal(self, goal: object) -> object:
+        self.reset()
         self._goal_handle = await self._action.send_goal(goal, feedback_callback=self._on_feedback)
         self._result_future = self._goal_handle.get_result_async()
         self._result_future.add_done_callback(self._on_result)
