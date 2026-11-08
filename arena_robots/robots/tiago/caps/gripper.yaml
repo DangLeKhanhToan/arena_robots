@@ -1,0 +1,8 @@
+gripper:
+  arm: arm
+  joint: gripper_right_finger_joint
+  controller: gripper_controller
+  positions:
+    open: 0.044
+    close: 0.0
+  max_effort: 16.0

@@ -150,3 +150,55 @@ def test_preflight_needs_models_or_all_and_names_the_known_models():
     with pytest.raises(ToolError, match="unknown robot models: ghost") as unknown:
         asyncio.run(mcp.robots_preflight(["ghost"]))
     assert "jackal" in unknown.value.hint
+
+
+def test_lift_and_gripper_tools_expose_their_schemas():
+    from mcp.server.mcpserver import MCPServer
+
+    server = MCPServer(name="test")
+    mcp.domain.install(server)
+    tools = {tool.name: tool.input_schema for tool in asyncio.run(server.list_tools())}
+    lift = tools["robots_lift"]
+    assert lift["required"] == ["height"]
+    assert set(lift["properties"]) == {"height", "env_id", "robot", "instance"}
+    gripper = tools["robots_gripper"]
+    assert "required" not in gripper
+    assert set(gripper["properties"]) == {"env_id", "robot", "command", "position", "max_effort", "instance"}
+    assert gripper["properties"]["max_effort"]["minimum"] == 0
+
+
+def test_gripper_needs_exactly_one_of_command_and_position():
+    for kwargs in ({}, {"command": "open", "position": 0.01}):
+        with pytest.raises(ToolError, match="exactly one"):
+            asyncio.run(mcp.robots_gripper(**kwargs))
+
+
+def test_lift_rejects_a_non_finite_height():
+    with pytest.raises(ToolError, match="finite"):
+        asyncio.run(mcp.robots_lift(float("nan")))
+
+
+def _entry(model: str, caps: list[str], params: dict[str, str] | None = None) -> dict:
+    return {"name": model, "model": model, "ns": f"/env_0/{model}", "caps": [{"cap": cap, "adapter": "direct"} for cap in caps], "params": params or {}}
+
+
+def test_actuator_instance_resolves_the_only_instance_of_the_cap():
+    entry = _entry("tiago", ["lift", "gripper"])
+    name, spec = mcp._actuator_spec(entry, "lift", "")
+    assert (name, spec.controller) == ("torso", "torso_controller")
+    assert mcp._actuator_spec(entry, "gripper", "gripper")[1].positions == {"open": 0.044, "close": 0.0}
+
+
+def test_actuator_instance_resolves_a_component_placed_gripper_from_the_live_parts():
+    entry = _entry("rbkairos", ["arm", "gripper"], {"arm@arm_mount": "fr3", "gripper@gripper_mount": "franka_hand"})
+    name, spec = mcp._actuator_spec(entry, "gripper", "")
+    assert (name, spec.joint, spec.positions) == ("gripper_mount", "robot_gripper_fr3_finger_joint1", {"open": 0.04, "close": 0.0})
+
+
+def test_actuator_instance_errors_name_the_choices():
+    entry = _entry("tiago", ["lift"])
+    with pytest.raises(ToolError, match="no lift instance 'x'") as unknown:
+        mcp._actuator_spec(entry, "lift", "x")
+    assert "torso" in (unknown.value.hint or "")
+    with pytest.raises(ToolError, match="no gripper cap"):
+        mcp._actuator_spec(_entry("jackal", []), "gripper", "")

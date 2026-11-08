@@ -28,6 +28,9 @@ from launch_ros.substitutions import FindPackageShare
 from nav2_common.launch import RewrittenYaml
 
 
+MAPPING_MODES = ('static', 'slam')  # static = the env's map server, slam = built from the lidar while driving
+
+
 def generate_launch_description():
     robots_root = FindPackageShare('arena_robots')
 
@@ -48,6 +51,8 @@ def generate_launch_description():
     sensors_json = LaunchArgument('sensors_json', default_value='')
     params_overlay = LaunchArgument('params_overlay', default_value='')
     agent = LaunchArgument('agent', default_value='')
+    mapping = LaunchArgument('mapping', default_value='static')
+    scan_topic = LaunchArgument('scan_topic', default_value='')
 
     def nav2_cfg(*parts):
         return PathJoinSubstitution([robots_root, 'config', 'nav2', *parts])
@@ -89,6 +94,10 @@ def generate_launch_description():
                 # In train_mode the RL environment publishes cmd_vel directly.
                 # Redirect the collision_monitor output to a dead topic so it
                 # never overwrites the RL agent's velocity commands.
+                'map_topic': PythonExpression(
+                    ['"', namespace.substitution, '/map" if "', mapping.substitution, '" == "slam" else "', arena_env_node.substitution, '/map"']
+                ),
+                'scan_topic': scan_topic.substitution,
                 'cmd_vel_out_topic': PythonExpression(
                     ['"cmd_vel_sink" if "', train_mode.substitution, '" == "true" else "cmd_vel"']
                 ),
@@ -106,6 +115,16 @@ def generate_launch_description():
             YAMLDropSubstitution(overlay, 'substitutions'),
         )),
         substitutions=YAMLFileSubstitution(substitutions)
+    )
+
+    slam_params = ParameterFile(
+        RewrittenYaml(
+            source_file=YAMLReplaceSubstitution(obj=YAMLFileSubstitution(nav2_cfg('slam.yaml')), substitutions=YAMLFileSubstitution(substitutions)),
+            root_key=namespace.substitution,
+            param_rewrites={'use_sim_time': use_sim_time.substitution},
+            convert_types=True,
+        ),
+        allow_substs=True,
     )
 
     nav2_configured_params = ParameterFile(
@@ -134,10 +153,16 @@ def generate_launch_description():
     def launch_setup(context, *args, **kwargs):
         tgn = arena_env_node.substitution.perform(context)
         is_planner_only = planner_only.substitution.perform(context).lower() == 'true'
+        mapping_mode = mapping.substitution.perform(context)
+        if mapping_mode not in MAPPING_MODES:
+            raise ValueError(f"mapping {mapping_mode!r} is none of {', '.join(MAPPING_MODES)}")
+        slam = mapping_mode == 'slam'
+        if slam and not scan_topic.substitution.perform(context):
+            raise ValueError('mapping:=slam needs a laserscan sensor on the robot')
         remappings: list[tuple[SomeSubstitutionsType, SomeSubstitutionsType]] = [
             ('map_server', '/map_server'),
         ]
-        if tgn:
+        if tgn and not slam:
             remappings.append(('map', PathJoinSubstitution([tgn, 'map'])))
 
         planner_server_node = Node(
@@ -187,6 +212,9 @@ def generate_launch_description():
                 ),
             ]
 
+        if slam:
+            lifecycle_nodes = ['slam_toolbox', *lifecycle_nodes]
+
         bringup_cmd_group = GroupAction([
             *(SetRemap(src=r[0], dst=r[1]) for r in remappings),
             *nav2_nodes,
@@ -201,6 +229,14 @@ def generate_launch_description():
             ),
         ])
         result: list = [bringup_cmd_group]
+        if slam:
+            result.append(
+                Node(
+                    package='slam_toolbox', executable='async_slam_toolbox_node', name='slam_toolbox',
+                    output='screen', parameters=[slam_params],
+                    remappings=[(f'/{topic}', PathJoinSubstitution([namespace.substitution, topic])) for topic in ('map', 'map_metadata')],
+                )
+            )
 
         controller_launch = nav2_cfg(
             'controllers', local_planner.substitution, 'controller.launch.py'

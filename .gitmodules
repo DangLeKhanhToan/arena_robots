@@ -176,3 +176,37 @@
 	url = https://github.com/arena-robots/hokuyo_ust20lx_meshes.git
 	update = none
 	component = lidar/hokuyo_ust20lx
+[submodule "deps/franka_description"]
+	path = deps/franka_description
+	url = https://github.com/frankaemika/franka_description.git
+	branch = jazzy
+	update = none
+	component = arm/fr3 gripper/franka_hand
+[submodule "arena_robots/robots/p3at/meshes"]
+	path = arena_robots/robots/p3at/meshes
+	url = https://github.com/allenh1/p2os.git
+	branch = main
+	update = none
+	robot = p3at
+	sparse = p2os_urdf/meshes/p3at_meshes
+[submodule "arena_robots/robots/tiago/meshes/tiago"]
+	path = arena_robots/robots/tiago/meshes/tiago
+	url = https://github.com/pal-robotics/tiago_robot.git
+	branch = humble-devel
+	update = none
+	robot = tiago
+	sparse = tiago_description/meshes
+[submodule "arena_robots/robots/tiago/meshes/pmb2"]
+	path = arena_robots/robots/tiago/meshes/pmb2
+	url = https://github.com/pal-robotics/pmb2_robot.git
+	branch = humble-devel
+	update = none
+	robot = tiago
+	sparse = pmb2_description/meshes
+[submodule "arena_robots/robots/tiago/meshes/pal_gripper"]
+	path = arena_robots/robots/tiago/meshes/pal_gripper
+	url = https://github.com/pal-robotics/pal_gripper.git
+	branch = humble-devel
+	update = none
+	robot = tiago
+	sparse = pal_gripper_description/meshes

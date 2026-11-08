@@ -1,0 +1,38 @@
+xacro:
+  include: "$(find arena_robots)/components/gripper/franka_hand/franka_hand.urdf.xacro"
+  macro: franka_hand_mount
+  attach:
+    tf_prefix: "${prefix}${mount}_"
+    parent: "${prefix}${parent}"
+
+ros2_control:
+  joints:
+    - name: "${prefix}${mount}_fr3_finger_joint1"
+      command_interfaces: [position]
+      state_interfaces: [position, velocity]
+    - name: "${prefix}${mount}_fr3_finger_joint2"
+      state_interfaces: [position, velocity]
+      mimic: true
+
+control:
+  controller: "${mount}_controller"
+  type: position_controllers/GripperActionController
+  ros__parameters:
+    joint: "${prefix}${mount}_fr3_finger_joint1"
+    action_monitor_rate: 20.0
+    goal_tolerance: 0.01
+    allow_stalling: true
+
+caps:
+  joint: "${prefix}${mount}_fr3_finger_joint1"
+  controller: "${mount}_controller"
+  positions:
+    open: 0.04
+    close: 0.0
+  max_effort: 70.0
+  moveit:
+    srdf:
+      package: arena_robots
+      path: components/gripper/franka_hand/srdf/franka_hand.srdf.xacro
+power:
+  static_power_w: 3.0

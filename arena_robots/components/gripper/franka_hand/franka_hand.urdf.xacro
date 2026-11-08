@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:include filename="$(find franka_description)/end_effectors/common/utils.xacro"/>
+  <xacro:include filename="$(find franka_description)/end_effectors/common/franka_hand.xacro"/>
+
+  <xacro:macro name="franka_hand_mount" params="tf_prefix parent *origin">
+    <link name="${tf_prefix}fr3_hand_mount"/>
+    <joint name="${tf_prefix}fr3_hand_mount_joint" type="fixed">
+      <xacro:insert_block name="origin"/>
+      <parent link="${parent}"/>
+      <child link="${tf_prefix}fr3_hand_mount"/>
+    </joint>
+    <xacro:franka_hand
+      connected_to="${tf_prefix}fr3_hand_mount"
+      robot_type="fr3"
+      arm_prefix="${tf_prefix}"
+      ee_id="franka_hand_white"
+      ee_inertials="${xacro.load_yaml('$(find franka_description)/end_effectors/franka_hand/inertials.yaml')}"
+      rpy_ee="0 0 ${-pi/4}"
+      gazebo="true"/>
+  </xacro:macro>
+</robot>

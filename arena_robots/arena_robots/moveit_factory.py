@@ -15,7 +15,7 @@ from arena_rclpy_mixins.yaml_replace import YAMLReplacer
 from moveit_configs_utils import MoveItConfigsBuilder
 
 import arena_robots.Robot
-from arena_robots.caps import _substitute_keys
+from arena_robots.caps import ArmSpec, _substitute_keys
 from arena_robots.catalog import render_wrapper_xacro
 
 if TYPE_CHECKING:
@@ -170,9 +170,45 @@ def _render_joint_limits(jl_path: Path, context: dict[str, str]) -> Path:
         return Path(f.name)
 
 
+_SEGMENT_FRACTION = 0.002
+_KDL_SOLVER = {
+    "kinematics_solver": "kdl_kinematics_plugin/KDLKinematicsPlugin",
+    "kinematics_solver_search_resolution": 0.005,
+    "kinematics_solver_timeout": 0.05,
+}
+
+
+def _write_yaml(data: dict) -> Path:
+    with NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+        yaml.safe_dump(data, f)
+        return Path(f.name)
+
+
+def _controller_params(arm: ArmSpec) -> dict[str, object]:
+    """MoveIt simple-controller-manager mapping naming the arm's FollowJointTrajectory controller."""
+    return {
+        "moveit_controller_manager": "moveit_simple_controller_manager/MoveItSimpleControllerManager",
+        "moveit_simple_controller_manager": {
+            "controller_names": [arm.controller],
+            arm.controller: {
+                "action_ns": "follow_joint_trajectory",
+                "type": "FollowJointTrajectory",
+                "default": True,
+                "joints": list(arm.chain),
+            },
+        },
+        "trajectory_execution": {
+            "allowed_execution_duration_scaling": 1.2,
+            "allowed_goal_duration_margin": 0.5,
+            "allowed_start_tolerance": 0.1,
+        },
+    }
+
+
 def build_moveit_params(robot_name: str, tf_prefix: str = "", parts: dict[str, list] | None = None, instance: str | None = None) -> dict[str, object] | None:
-    """Return a flat parameter dict (URDF, SRDF, kinematics, joint limits)
-    for ``robot_name`` if it advertises ``arm``; ``None`` otherwise.
+    """Return a flat parameter dict (URDF, SRDF, kinematics, joint limits,
+    arm controller mapping) for ``robot_name`` if it advertises ``arm`` with a
+    ``caps.moveit`` block carrying a ``package`` or an ``srdf``; ``None`` otherwise.
 
     When ``tf_prefix`` is non-empty (e.g. ``"env_0/ridgeback_plus/"``) every
     link reference in the URDF/SRDF gets the prefix prepended, so MoveIt's
@@ -210,12 +246,15 @@ def build_moveit_params(robot_name: str, tf_prefix: str = "", parts: dict[str, l
 
     mv = arm.raw.get("moveit") or {}
     pkg = mv.get("package")
-    if not pkg:
+    if not pkg and not mv.get("srdf"):
         return None
+    config_pkg = pkg or "arena_robots"
+    builder_name = mv.get("robot_name") or (pkg.removesuffix("_moveit_config") if pkg else robot_name)
 
     args_dict = mv.get("args") or {}
     mappings = {k: (str(v).lower() if isinstance(v, bool) else str(v)) for k, v in args_dict.items()}
-    mappings.setdefault("name", mappings.get("ur_type", "ur5e"))
+    if "ur_type" in mappings:
+        mappings.setdefault("name", mappings["ur_type"])
 
     resolved = robot._resolved(parts or {})
 
@@ -228,12 +267,12 @@ def build_moveit_params(robot_name: str, tf_prefix: str = "", parts: dict[str, l
         urdf_abs = Path(get_package_share_directory("arena_robots")) / "robots" / robot_name / "urdf" / f"{robot_name}.urdf.xacro"
 
     srdf_ref = mv.get("srdf") or {}
-    srdf_pkg = srdf_ref.get("package", pkg)
+    srdf_pkg = srdf_ref.get("package", config_pkg)
     srdf_rel = srdf_ref.get("path", "srdf/ur.srdf.xacro")
     srdf_abs = Path(get_package_share_directory(srdf_pkg)) / srdf_rel
 
     jl_ref = mv.get("joint_limits") or {}
-    jl_pkg = jl_ref.get("package", pkg)
+    jl_pkg = jl_ref.get("package", config_pkg)
     jl_rel = jl_ref.get("path", "config/joint_limits.yaml")
     jl_abs = Path(get_package_share_directory(jl_pkg)) / jl_rel
 
@@ -243,8 +282,18 @@ def build_moveit_params(robot_name: str, tf_prefix: str = "", parts: dict[str, l
         srdf_abs = _compose_srdf(robot, srdf_abs, placement_context, extras)
         jl_abs = _render_joint_limits(jl_abs, placement_context)
 
-    moveit_config = MoveItConfigsBuilder(robot_name="ur", package_name=pkg).robot_description(file_path=str(urdf_abs), mappings=mappings).robot_description_semantic(str(srdf_abs), mappings=mappings).joint_limits(str(jl_abs)).to_moveit_configs()  # pyright: ignore[reportArgumentType]
-    params = moveit_config.to_dict()
+    group = arm.planning_group or arm.name
+    builder = MoveItConfigsBuilder(robot_name=builder_name, package_name=config_pkg).robot_description(file_path=str(urdf_abs), mappings=mappings).robot_description_semantic(str(srdf_abs), mappings=mappings).joint_limits(str(jl_abs)).trajectory_execution(file_path=str(_write_yaml(_controller_params(arm))))  # pyright: ignore[reportArgumentType]
+    if not pkg:
+        builder = builder.robot_description_kinematics(str(_write_yaml({}))).planning_pipelines(pipelines=["ompl"])
+    params = builder.to_moveit_configs().to_dict()  # pyright: ignore[reportArgumentType]
+
+    if not pkg:
+        params.setdefault("ompl", {}).setdefault(group, {})["longest_valid_segment_fraction"] = _SEGMENT_FRACTION
+
+    kinematics = params.get("robot_description_kinematics") or {}
+    kinematics.setdefault(group, dict(_KDL_SOLVER))
+    params["robot_description_kinematics"] = kinematics
 
     if tf_prefix:
         rd = params.get("robot_description")

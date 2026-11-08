@@ -131,6 +131,8 @@ from arena_rclpy_mixins.registry import ClassRegistry
 BRINGUPS: dict[str, ClassRegistry[str, type[Bringup]]] = {
     "mobile": ClassRegistry(),
     "arm": ClassRegistry(),
+    "lift": ClassRegistry(),
+    "gripper": ClassRegistry(),
 }
 
-from . import arm, mobile  # noqa: F401, E402
+from . import arm, gripper, lift, mobile  # noqa: F401, E402
