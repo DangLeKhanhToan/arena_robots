@@ -144,6 +144,10 @@ class TestBridgeRows:
             "rear_camera/camera_info",
         ]
 
+    def test_sensorless_spec_produces_no_rows(self):
+        specs = [_spec("orphan_image", "image", "${namespace}/orphan/image", None)]
+        assert bridge_rows(specs, "") == []
+
     def test_contact_type_produces_a_bridged_row(self):
         specs = [_spec("bumper", "contact", "${namespace}/bumper", "bumper_sensor")]
         assert bridge_rows(specs, "") == [

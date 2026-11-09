@@ -305,8 +305,10 @@ def _gazebo_sensor_lines(entry: dict[str, object]) -> list[str]:
     if sensor_type != 'contact':
         raise ValueError(f"sensor {entry['name']!r}: only 'contact' define blocks are implemented, got {sensor_type!r}")
 
+    if not entry.get('sensor'):
+        raise ValueError(f"sensor {entry['name']!r}: 'sensor' is required with a 'define' block")
     link = str(entry['frame'])
-    name = str(entry.get('sensor') or entry['name'])
+    name = str(entry['sensor'])
     collisions = define.get('collision') or []
     if isinstance(collisions, str):
         collisions = [collisions]
