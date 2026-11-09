@@ -3,15 +3,8 @@
 import os
 
 from arena_bringup.future import PythonExpression
-from arena_bringup.substitutions import (
-    LaunchArgument,
-    YAMLDropSubstitution,
-    YAMLFileSubstitution,
-    YAMLMergeSubstitution,
-    YAMLReplaceSubstitution,
-    YAMLRetrieveSubstitution,
-    YAMLSelectSubstitution,
-)
+from arena_rclpy_mixins.launch_argument import LaunchArgument
+from arena_bringup.substitutions import YAMLDropSubstitution, YAMLFileSubstitution, YAMLMergeSubstitution, YAMLReplaceSubstitution, YAMLRetrieveSubstitution, YAMLSelectSubstitution
 from arena_robots.nav2 import (
     Nav2CollisionDerivedYAML,
     Nav2KinematicsDerivedYAML,
@@ -37,22 +30,22 @@ def generate_launch_description():
     ld_items = []
     LaunchArgument.auto_append(ld_items)
 
-    robot = LaunchArgument('robot')
-    arena_env_node = LaunchArgument('arena_env_node', default_value='')
-    env_namespace = LaunchArgument('env_namespace', default_value='')
-    namespace = LaunchArgument('namespace')
-    frame = LaunchArgument('frame')
-    use_sim_time = LaunchArgument('use_sim_time')
-    global_planner = LaunchArgument('global_planner')
-    local_planner = LaunchArgument('local_planner')
-    inter_planner = LaunchArgument('inter_planner')
-    train_mode = LaunchArgument('train_mode', default_value='false')
-    planner_only = LaunchArgument('planner_only', default_value='false')
-    sensors_json = LaunchArgument('sensors_json', default_value='')
-    params_overlay = LaunchArgument('params_overlay', default_value='')
-    agent = LaunchArgument('agent', default_value='')
-    mapping = LaunchArgument('mapping', default_value='static')
-    scan_topic = LaunchArgument('scan_topic', default_value='')
+    robot = LaunchArgument('robot', description='Robot model name.')
+    arena_env_node = LaunchArgument('arena_env_node', default_value='', description='Name of the env node whose map and services the robot uses.')
+    env_namespace = LaunchArgument('env_namespace', default_value='', description='ROS namespace of the env the robot belongs to.')
+    namespace = LaunchArgument('namespace', description='ROS namespace of the robot.')
+    frame = LaunchArgument('frame', description='Frame prefix of the robot.')
+    use_sim_time = LaunchArgument('use_sim_time', description='Whether nodes follow the simulator clock.')
+    global_planner = LaunchArgument('global_planner', description='Nav2 global planner kind.')
+    local_planner = LaunchArgument('local_planner', description='Nav2 controller kind.')
+    inter_planner = LaunchArgument('inter_planner', description='Nav2 inter planner kind.')
+    train_mode = LaunchArgument('train_mode', default_value='false', description='Whether the robot is driven by a DRL agent in training (true or false).')
+    planner_only = LaunchArgument('planner_only', default_value='false', description='Run only the global planner.')
+    sensors_json = LaunchArgument('sensors_json', default_value='', description='JSON list of the robot sensor specs used to derive the costmap observation sources.')
+    params_overlay = LaunchArgument('params_overlay', default_value='', description='Nav2 params overlay, a path or an overlay name (empty = none).')
+    agent = LaunchArgument('agent', default_value='', description='Name of the DRL agent directory the controller loads weights from.')
+    mapping = LaunchArgument('mapping', default_value='static', description='Map source: static = the env map server, slam = built from the lidar while driving.')
+    scan_topic = LaunchArgument('scan_topic', default_value='', description='Laserscan topic of the SLAM mapper (empty = none).')
 
     def nav2_cfg(*parts):
         return PathJoinSubstitution([robots_root, 'config', 'nav2', *parts])
