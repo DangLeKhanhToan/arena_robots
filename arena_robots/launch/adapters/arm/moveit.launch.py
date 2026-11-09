@@ -15,10 +15,10 @@ def generate_launch_description():
     ld_items = []
     LaunchArgument.auto_append(ld_items)
 
-    robot = LaunchArgument("robot", description="Robot model name under arena_robots/robots.")
-    namespace = LaunchArgument("namespace", description="ROS namespace of the robot, passed by the including launch file.")
-    frame = LaunchArgument("frame", description="Frame prefix of the robot, passed by the including launch file.")
-    use_sim_time = LaunchArgument("use_sim_time", description="Whether nodes follow the simulator clock, passed by the including launch file.")
+    robot = LaunchArgument("robot", description="Robot model name.")
+    namespace = LaunchArgument("namespace", description="ROS namespace of the robot.")
+    frame = LaunchArgument("frame", description="Frame prefix of the robot.")
+    use_sim_time = LaunchArgument("use_sim_time", description="Whether nodes follow the simulator clock.")
     parts_json = LaunchArgument("parts_json", default_value="{}", description="JSON object mapping part type to the list of robot parts to plan for.")
     instance = LaunchArgument("instance", default_value="", description="Name of the arm instance the MoveIt stack serves (empty = the only arm).")
 

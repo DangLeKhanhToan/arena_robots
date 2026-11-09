@@ -12,9 +12,9 @@ def generate_launch_description() -> LaunchDescription:
     ld_items: list = []
     LaunchArgument.auto_append(ld_items)
 
-    namespace = LaunchArgument('namespace', description='ROS namespace of the robot, passed by the including launch file.')
-    env_namespace = LaunchArgument('env_namespace', default_value='', description='ROS namespace of the env the robot belongs to, passed by the including launch file.')
-    use_sim_time = LaunchArgument('use_sim_time', description='Whether nodes follow the simulator clock, passed by the including launch file.')
+    namespace = LaunchArgument('namespace', description='ROS namespace of the robot.')
+    env_namespace = LaunchArgument('env_namespace', default_value='', description='ROS namespace of the env the robot belongs to.')
+    use_sim_time = LaunchArgument('use_sim_time', description='Whether nodes follow the simulator clock.')
 
     def _setup(context, *args, **kwargs):
         ns = namespace.substitution.perform(context)

@@ -10,12 +10,12 @@ def generate_launch_description():
     ld_items: list = []
     LaunchArgument.auto_append(ld_items)
 
-    LaunchArgument("robot", description="Robot model name under arena_robots/robots.")
-    namespace = LaunchArgument("namespace", description="ROS namespace of the robot, passed by the including launch file.")
-    use_sim_time = LaunchArgument("use_sim_time", description="Whether nodes follow the simulator clock, passed by the including launch file.")
-    frame = LaunchArgument("frame", description="Frame prefix of the robot, passed by the including launch file.")
-    base_frame = LaunchArgument("base_frame", description="Base link frame of the robot, passed by the including launch file.")
-    arena_env_node = LaunchArgument("arena_env_node", default_value="", description="Name of the env node whose map and services the robot uses, passed by the including launch file.")
+    LaunchArgument("robot", description="Robot model name.")
+    namespace = LaunchArgument("namespace", description="ROS namespace of the robot.")
+    use_sim_time = LaunchArgument("use_sim_time", description="Whether nodes follow the simulator clock.")
+    frame = LaunchArgument("frame", description="Frame prefix of the robot.")
+    base_frame = LaunchArgument("base_frame", description="Base link frame of the robot.")
+    arena_env_node = LaunchArgument("arena_env_node", default_value="", description="Name of the env node whose map and services the robot uses.")
     agent = LaunchArgument("agent", description="Name of the DRL agent directory the controller loads weights from.")
     node_name = LaunchArgument("node_name", default_value="rosnav_rl_inference", description="Name of the DRL inference node.")
     control_rate = LaunchArgument("control_rate", default_value="10.0", description="Control loop rate of the inference node in Hz.")

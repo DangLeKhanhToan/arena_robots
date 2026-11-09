@@ -10,10 +10,10 @@ def generate_launch_description() -> LaunchDescription:
     ld_items: list = []
     LaunchArgument.auto_append(ld_items)
 
-    namespace = LaunchArgument('namespace', description='ROS namespace of the robot, passed by the including launch file.')
-    frame = LaunchArgument('frame', description='Frame prefix of the robot, passed by the including launch file.')
-    base_frame = LaunchArgument('base_frame', description='Base link frame of the robot, passed by the including launch file.')
-    use_sim_time = LaunchArgument('use_sim_time', description='Whether nodes follow the simulator clock, passed by the including launch file.')
+    namespace = LaunchArgument('namespace', description='ROS namespace of the robot.')
+    frame = LaunchArgument('frame', description='Frame prefix of the robot.')
+    base_frame = LaunchArgument('base_frame', description='Base link frame of the robot.')
+    use_sim_time = LaunchArgument('use_sim_time', description='Whether nodes follow the simulator clock.')
     agent = LaunchArgument('agent', description='Name of the DRL agent directory the controller loads weights from.')
 
     def _setup(context: LaunchContext, *args: object, **kwargs: object) -> list[Node]:
