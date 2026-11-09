@@ -3,15 +3,8 @@
 import os
 
 from arena_bringup.future import PythonExpression
-from arena_bringup.substitutions import (
-    LaunchArgument,
-    YAMLDropSubstitution,
-    YAMLFileSubstitution,
-    YAMLMergeSubstitution,
-    YAMLReplaceSubstitution,
-    YAMLRetrieveSubstitution,
-    YAMLSelectSubstitution,
-)
+from arena_rclpy_mixins.launch_argument import LaunchArgument
+from arena_bringup.substitutions import YAMLDropSubstitution, YAMLFileSubstitution, YAMLMergeSubstitution, YAMLReplaceSubstitution, YAMLRetrieveSubstitution, YAMLSelectSubstitution
 from arena_robots.nav2 import (
     Nav2CollisionDerivedYAML,
     Nav2KinematicsDerivedYAML,
@@ -47,12 +40,12 @@ def generate_launch_description():
     local_planner = LaunchArgument('local_planner', description='Nav2 controller kind.')
     inter_planner = LaunchArgument('inter_planner', description='Nav2 inter planner kind.')
     train_mode = LaunchArgument('train_mode', default_value='false', description='Whether the robot is driven by a DRL agent in training (true or false).')
-    planner_only = LaunchArgument('planner_only', default_value='false', description='Run only the global planner, without controller, smoother and behavior servers (true or false).')
+    planner_only = LaunchArgument('planner_only', default_value='false', description='Run only the global planner.')
     sensors_json = LaunchArgument('sensors_json', default_value='', description='JSON list of the robot sensor specs used to derive the costmap observation sources.')
     params_overlay = LaunchArgument('params_overlay', default_value='', description='Nav2 params overlay, a path or an overlay name (empty = none).')
     agent = LaunchArgument('agent', default_value='', description='Name of the DRL agent directory the controller loads weights from.')
     mapping = LaunchArgument('mapping', default_value='static', description='Map source: static = the env map server, slam = built from the lidar while driving.')
-    scan_topic = LaunchArgument('scan_topic', default_value='', description='Laserscan topic the SLAM mapper subscribes to (empty = no laserscan sensor, required for mapping:=slam).')
+    scan_topic = LaunchArgument('scan_topic', default_value='', description='Laserscan topic of the SLAM mapper (empty = none).')
 
     def nav2_cfg(*parts):
         return PathJoinSubstitution([robots_root, 'config', 'nav2', *parts])

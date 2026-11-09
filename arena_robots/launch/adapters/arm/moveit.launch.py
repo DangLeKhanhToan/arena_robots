@@ -8,7 +8,7 @@ from launch import LaunchDescription
 from launch.actions import OpaqueFunction
 from launch_ros.actions import Node, PushRosNamespace
 
-from arena_bringup.substitutions import LaunchArgument
+from arena_rclpy_mixins.launch_argument import LaunchArgument
 
 
 def generate_launch_description():

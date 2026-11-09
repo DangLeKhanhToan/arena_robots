@@ -1,6 +1,6 @@
 """rosnav_rl adapter launch: single inference node, no nav2."""
 
-from arena_bringup.substitutions import LaunchArgument
+from arena_rclpy_mixins.launch_argument import LaunchArgument
 from launch_ros.actions import Node
 
 from launch import LaunchDescription

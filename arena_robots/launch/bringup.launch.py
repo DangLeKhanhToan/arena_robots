@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from arena_bringup.substitutions import LaunchArgument
+from arena_rclpy_mixins.launch_argument import LaunchArgument
 from arena_robots.bringup import check_caps, BRINGUPS
 from arena_robots.Robot import RobotIdentifier
 from launch import LaunchDescription

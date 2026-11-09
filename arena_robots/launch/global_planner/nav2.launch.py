@@ -3,7 +3,7 @@
 Bootstraps a planner_server-only nav2 stack and a goal-pose -> compute_path_to_pose bridge.
 """
 
-from arena_bringup.substitutions import LaunchArgument
+from arena_rclpy_mixins.launch_argument import LaunchArgument
 from launch import LaunchDescription
 from launch.actions import IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
