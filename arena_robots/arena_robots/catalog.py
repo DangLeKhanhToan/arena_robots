@@ -230,11 +230,6 @@ class Catalog:
 
 
 def _render_sensor_templates(component: ComponentSpec, context: dict[str, typing.Any]) -> list[dict[str, object]]:
-    """Deep-copy + render a component's ``sensor.gz`` templates for one placement.
-
-    ``YAMLReplacer.replace`` mutates its input in place and the templates live on the
-    shared, cached :class:`ComponentSpec`; the deep copy is what keeps one placement's
-    overrides from bleeding into the next (and into every other robot)."""
     return [YAMLReplacer(context).replace(copy.deepcopy(template)) for template in component.sensor_gz]
 
 
@@ -300,16 +295,6 @@ _XACRO_NS = 'http://www.ros.org/wiki/xacro'
 
 
 def _gazebo_sensor_lines(entry: dict[str, object]) -> list[str]:
-    """``<gazebo reference="..."><sensor .../></gazebo>`` lines for a ``sensor.gz``
-    entry whose optional ``define:`` block asks the wrapper to create the backing
-    sensor. Entries without ``define`` describe a sensor the component's own xacro
-    already emits, so they contribute no XML here.
-
-    ``<topic>`` is intentionally omitted: the URDF loader injects the instance-scoped
-    topic into ``<contact><topic>`` after xacro
-    (``arena_simulation_setup.utils.models.urdf._patch_sensor_topics``); a statically
-    emitted topic could not know ``/model/<env>/<robot>``.
-    """
     define = entry.get('define')
     if not define:
         return []
