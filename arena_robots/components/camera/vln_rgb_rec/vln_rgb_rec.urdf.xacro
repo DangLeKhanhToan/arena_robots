@@ -1,0 +1,37 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://wiki.ros.org/xacro">
+  <!-- vln_rgb unchanged (the planner's own camera and optics), plus a 640x480 / 30 Hz RGB camera on the
+       same frame and a third-person chase camera, for episode videos only. -->
+  <xacro:include filename="$(find arena_robots)/components/camera/vln_rgb/vln_rgb.urdf.xacro" />
+  <xacro:include filename="$(find arena_robots)/components/camera/chase_rec/chase_rec.urdf.xacro" />
+
+  <xacro:macro name="vln_rgb_rec" params="name parent_link sensor topic height optics_file *origin rec_width:=640 rec_height:=480 rec_rate:=30">
+    <xacro:vln_rgb name="${name}" parent_link="${parent_link}" sensor="${sensor}" topic="${topic}" height="${height}" optics_file="${optics_file}">
+      <xacro:insert_block name="origin" />
+    </xacro:vln_rgb>
+    <xacro:property name="M_PI" value="3.1415926535897931" />
+    <xacro:property name="optics" value="${xacro.load_yaml(optics_file)}" />
+    <gazebo reference="${name}_rgb_camera_frame">
+      <sensor name="${sensor}_rec_camera" type="camera">
+        <gz_frame_id>$(arg sim_path)/${name}_rgb_camera_frame</gz_frame_id>
+        <always_on>1</always_on>
+        <update_rate>${rec_rate}</update_rate>
+        <visualize>false</visualize>
+        <topic>${topic}/rec_image</topic>
+        <camera>
+          <horizontal_fov>${optics['hfov_deg'] * M_PI / 180}</horizontal_fov>
+          <image>
+            <width>${rec_width}</width>
+            <height>${rec_height}</height>
+            <format>R8G8B8</format>
+          </image>
+          <clip>
+            <near>0.01</near>
+            <far>100.0</far>
+          </clip>
+        </camera>
+      </sensor>
+    </gazebo>
+    <xacro:chase_rec name="${name}" parent_link="${parent_link}" sensor="${sensor}" topic="${topic}" />
+  </xacro:macro>
+</robot>

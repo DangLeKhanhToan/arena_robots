@@ -1,0 +1,45 @@
+# vln_rgbd + a third RGB sensor for recording videos (640x480, 30 Hz) on the same frame.
+# The planner keeps the 224 px RGB and 256 px depth of vln_rgbd: the adapter binds
+# `sensor: image` to the FIRST image sensor, which is listed first below.
+# Plus a third-person chase camera (2.6 m behind, 1.6 m up, 30 Hz): <ns>/vln_camera/chase_image.
+# Use: robot:='jackal[camera=vln_rgbd_rec]'. Recording topics: <ns>/vln_camera/rec_image, <ns>/vln_camera/chase_image
+xacro:
+  include: "$(find arena_robots)/components/camera/vln_rgbd_rec/vln_rgbd_rec.urdf.xacro"
+  macro: vln_rgbd_rec
+  attach:
+    name: "${prefix}${mount}"
+    parent_link: "${prefix}${parent}"
+    sensor: "${mount}"
+    topic: "${topic:-vln_camera}"
+    height: "${height:-0.9815}"
+  args:
+    height: 0.9815
+sensor:
+  gz:
+    - name: "${name:-vln_camera}_image"
+      type: image
+      topic: "${topic:-vln_camera}/image"
+      frame: "${prefix}${mount}_rgb_camera_frame"
+      sensor: "${mount}_rgb_camera"
+    - name: "${name:-vln_camera}_info"
+      type: camera_info
+      topic: "${topic:-vln_camera}/camera_info"
+      frame: "${prefix}${mount}_rgb_camera_frame"
+      sensor: "${mount}_rgb_camera"
+    - name: "${name:-vln_camera}_depth"
+      type: depth
+      topic: "${topic:-vln_camera}/depth_image"
+      frame: "${prefix}${mount}_depth_camera_frame"
+      sensor: "${mount}_depth_camera"
+    - name: "${name:-vln_camera}_rec_image"
+      type: image
+      topic: "${topic:-vln_camera}/rec_image"
+      frame: "${prefix}${mount}_rgb_camera_frame"
+      sensor: "${mount}_rec_camera"
+    - name: "${name:-vln_camera}_chase_image"
+      type: image
+      topic: "${topic:-vln_camera}/chase_image"
+      frame: "${prefix}${mount}_chase_camera_frame"
+      sensor: "${mount}_chase_camera"
+power:
+  static_power_w: 2.0

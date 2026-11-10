@@ -1,0 +1,37 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://wiki.ros.org/xacro">
+  <!-- Third-person "chase" camera for episode videos: rigidly attached behind and above the robot,
+       looking forward and down at it. No visual, no collision, no inertia: the robot, the lidar and
+       the planner cameras never see it. Not a sensor component of its own; the *_rec cameras call it.
+       Default pose relative to parent_link: 2.6 m behind, 1.6 m up, pitched 28 degrees down. -->
+  <xacro:macro name="chase_rec" params="name parent_link sensor topic back:=2.6 up:=1.6 pitch_deg:=28 hfov_deg:=80 width:=640 height:=480 rate:=30">
+    <xacro:property name="M_PI" value="3.1415926535897931" />
+    <link name="${name}_chase_camera_frame" />
+    <joint name="${name}_chase_camera_joint" type="fixed">
+      <origin xyz="${-back} 0 ${up}" rpy="0 ${pitch_deg * M_PI / 180} 0" />
+      <parent link="${parent_link}" />
+      <child link="${name}_chase_camera_frame" />
+    </joint>
+    <gazebo reference="${name}_chase_camera_frame">
+      <sensor name="${sensor}_chase_camera" type="camera">
+        <gz_frame_id>$(arg sim_path)/${name}_chase_camera_frame</gz_frame_id>
+        <always_on>1</always_on>
+        <update_rate>${rate}</update_rate>
+        <visualize>false</visualize>
+        <topic>${topic}/chase_image</topic>
+        <camera>
+          <horizontal_fov>${hfov_deg * M_PI / 180}</horizontal_fov>
+          <image>
+            <width>${width}</width>
+            <height>${height}</height>
+            <format>R8G8B8</format>
+          </image>
+          <clip>
+            <near>0.05</near>
+            <far>100.0</far>
+          </clip>
+        </camera>
+      </sensor>
+    </gazebo>
+  </xacro:macro>
+</robot>
