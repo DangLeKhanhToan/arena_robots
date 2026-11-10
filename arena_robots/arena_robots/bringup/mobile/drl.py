@@ -27,11 +27,19 @@ def _load_goto_pose_drl() -> type:
 #     goal_topic: str         # optional, default ~/goal_pose
 #     cmd_vel_topic: str      # optional, default ~/cmd_vel
 #     global_planner: str     # optional, default "nav2/navfn", "<family>/<kind>" or "none"
+#     executor: str           # optional, default "bridge": the bridge runs moves / chunks itself;
+#                             # "dwb": Nav2 controller_server with DWB follows them (FollowPath), lidar-only local costmap
+#     people_as: str          # optional, default "object" (people are lidar obstacles); "human": + social cost layer
+#                             # (personal space from arena_peds). Only with executor dwb.
 #     namespace: str          # optional, default ""
 #     use_sim_time: bool      # optional, default true
 #
 # The DrlAdapter (arena_runtime env/adapters/mobile/drl.py) owns subprocess lifecycle;
 # this bringup spawns an optional global planner stack (nav2 planner_server-only by default).
+
+
+EXECUTORS = ("bridge", "dwb")
+PEOPLE_AS = ("object", "human")
 
 
 @BringupMeta.attach(requires={"mobile"}, cap="mobile")
@@ -85,7 +93,39 @@ class DrlBringup(Bringup):
         frame: str = "",
         global_planner: str = "nav2/navfn",
         arena_env_node: str = "",
-        **_: object,
+        executor: str = "bridge",
+        people_as: str = "object",
+        **kwargs: object,
+    ) -> list[Action]:
+        actions = self._global_planner_actions(use_sim_time=use_sim_time, frame=frame, global_planner=global_planner, arena_env_node=arena_env_node)
+        executor, people_as = str(executor or "bridge"), str(people_as or "object")
+        if executor not in EXECUTORS:
+            raise ValueError(f"drl bringup for '{self.robot.name}': mobile.executor {executor!r} not in {EXECUTORS}")
+        if people_as not in PEOPLE_AS:
+            raise ValueError(f"drl bringup for '{self.robot.name}': mobile.people_as {people_as!r} not in {PEOPLE_AS}")
+        if executor == "dwb":
+            from arena_robots.bringup.mobile.nav2 import nav2_include  # noqa: PLC0415
+
+            actions += nav2_include(
+                self,
+                use_sim_time=use_sim_time,
+                frame=frame,
+                arena_env_node=arena_env_node,
+                env_namespace=str(kwargs.get("env_namespace", "")),
+                sensors=kwargs.get("sensors"),  # type: ignore[arg-type]
+                local_planner="dwb",
+                params_overlay="vla_dwb_social" if people_as == "human" else "vla_dwb",
+                controller_only=True,
+            )
+        return actions
+
+    def _global_planner_actions(
+        self,
+        *,
+        use_sim_time: bool,
+        frame: str,
+        global_planner: str,
+        arena_env_node: str,
     ) -> list[Action]:
         from arena_planners.resolver import (  # noqa: PLC0415
             ResolverError,

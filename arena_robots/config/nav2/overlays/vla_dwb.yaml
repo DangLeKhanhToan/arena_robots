@@ -1,0 +1,18 @@
+# DWB as the executor of a vla/drl planner (robot.mobile.executor:=dwb), people seen as obstacles.
+# controller_server only, rolling local costmap from the robot's own sensors (no static map).
+# Goal tolerances stay below one VLN step (0.25 m / 15 deg), or a step counts as reached before the robot moves.
+controller_server:
+  ros__parameters:
+    goal_checker:
+      xy_goal_tolerance: 0.03
+      yaw_goal_tolerance: 0.035
+      stateful: True
+    progress_checker:
+      required_movement_radius: 0.05
+      movement_time_allowance: 8.0
+substitutions:
+  controller_plugins_dict:
+    FollowPath:
+      xy_goal_tolerance: 0.03
+      prune_plan: True
+      prune_distance: 1.0

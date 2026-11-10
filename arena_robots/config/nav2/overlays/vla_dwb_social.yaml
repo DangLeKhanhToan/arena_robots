@@ -1,0 +1,53 @@
+# DWB executor with people seen as HUMANS (robot.mobile.executor:=dwb robot.mobile.people_as:=human):
+# vla_dwb.yaml + the social cost layer in the local costmap (personal space around every person of arena_peds).
+# Keep in sync with vla_dwb.yaml and social_cost_layer.yaml (local_costmap part).
+controller_server:
+  ros__parameters:
+    goal_checker:
+      xy_goal_tolerance: 0.03
+      yaw_goal_tolerance: 0.035
+      stateful: true
+    progress_checker:
+      required_movement_radius: 0.05
+      movement_time_allowance: 8.0
+substitutions:
+  controller_plugins_dict:
+    FollowPath:
+      xy_goal_tolerance: 0.03
+      prune_plan: true
+      prune_distance: 1.0
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      plugins:
+      - obstacle_layer
+      - voxel_layer
+      - social_cost_layer
+      - inflation_layer
+      social_cost_layer:
+        plugin: arena_social_cost_layer/SocialCostLayer
+        enabled: true
+        peds_topic: ${env_namespace}/arena_peds
+        personal_space_radius: 1.0
+        personal_space_sigma: 0.9
+        group_extra_radius: 2.0
+        group_sigma: 0.85
+        falloff_shape: 3.0
+        max_cost_value: 252
+        stale_timeout: 0.5
+        cost_scale: 0.8
+        cost_bias: 0.05
+        interaction_weights:
+        - 0.9
+        - 1.2
+        - 0.0
+        - 0.8
+        - 0.8
+        - 0.8
+        - 1.0
+        - 0.6
+        - 0.8
+        - 0.8
+        - 1.5
+        - 0.8
+        - 0.0

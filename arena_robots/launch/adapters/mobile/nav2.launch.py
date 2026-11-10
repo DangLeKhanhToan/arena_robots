@@ -3,8 +3,8 @@
 import os
 
 from arena_bringup.future import PythonExpression
-from arena_rclpy_mixins.launch_argument import LaunchArgument
 from arena_bringup.substitutions import YAMLDropSubstitution, YAMLFileSubstitution, YAMLMergeSubstitution, YAMLReplaceSubstitution, YAMLRetrieveSubstitution, YAMLSelectSubstitution
+from arena_rclpy_mixins.launch_argument import LaunchArgument
 from arena_robots.nav2 import (
     Nav2CollisionDerivedYAML,
     Nav2KinematicsDerivedYAML,
@@ -19,7 +19,6 @@ from launch_ros.actions import Node, SetRemap
 from launch_ros.descriptions import ParameterFile
 from launch_ros.substitutions import FindPackageShare
 from nav2_common.launch import RewrittenYaml
-
 
 MAPPING_MODES = ('static', 'slam')  # static = the env's map server, slam = built from the lidar while driving
 
@@ -41,6 +40,7 @@ def generate_launch_description():
     inter_planner = LaunchArgument('inter_planner', description='Nav2 inter planner kind.')
     train_mode = LaunchArgument('train_mode', default_value='false', description='Whether the robot is driven by a DRL agent in training (true or false).')
     planner_only = LaunchArgument('planner_only', default_value='false', description='Run only the global planner.')
+    controller_only = LaunchArgument('controller_only', default_value='false', description='Run only controller_server, for planners that hand it paths.')
     sensors_json = LaunchArgument('sensors_json', default_value='', description='JSON list of the robot sensor specs used to derive the costmap observation sources.')
     params_overlay = LaunchArgument('params_overlay', default_value='', description='Nav2 params overlay, a path or an overlay name (empty = none).')
     agent = LaunchArgument('agent', default_value='', description='Name of the DRL agent directory the controller loads weights from.')
@@ -152,6 +152,7 @@ def generate_launch_description():
         slam = mapping_mode == 'slam'
         if slam and not scan_topic.substitution.perform(context):
             raise ValueError('mapping:=slam needs a laserscan sensor on the robot')
+        is_controller_only = controller_only.substitution.perform(context).lower() == 'true'
         remappings: list[tuple[SomeSubstitutionsType, SomeSubstitutionsType]] = [
             ('map_server', '/map_server'),
         ]
@@ -166,6 +167,14 @@ def generate_launch_description():
         if is_planner_only:
             lifecycle_nodes = ['planner_server']
             nav2_nodes = [planner_server_node]
+        elif is_controller_only:
+            lifecycle_nodes = ['controller_server']
+            nav2_nodes = [
+                Node(
+                    package='nav2_controller', executable='controller_server', name='controller_server',
+                    output='screen', parameters=[nav2_configured_params],
+                ),
+            ]
         else:
             lifecycle_nodes = full_lifecycle_nodes
             # cmd_vel chain: controller -> cmd_vel_nav -> smoother -> cmd_vel_smoothed <- behaviors

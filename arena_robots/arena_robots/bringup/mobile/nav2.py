@@ -45,73 +45,80 @@ class Nav2Bringup(Bringup):
     def bt_node_name(self) -> str:
         return self.namespace("bt_navigator")
 
-    def _launch_actions(
-        self,
-        *,
-        use_sim_time: bool = True,
-        frame: str = "",
-        global_planner: str = "navfn",
-        local_planner: str = "regulated_pure_pursuit",
-        inter_planner: str = "default",
-        train_mode: bool = False,
-        arena_env_node: str = "",
-        env_namespace: str = "",
-        sensors: list[SensorSpec] | None = None,
-        params_overlay: str = "",
-        agent: str = "",
-        mapping: str = "static",
-        **_: object,
-    ) -> list[Action]:
-        agent_name = agent or str(self.robot.caps.mobile.sub("rosnav_rl").get("agent", ""))
-        if local_planner == "rosnav_rl" and not agent_name:
-            raise ValueError(f"nav2 bringup for '{self.robot.name}' with local_planner=rosnav_rl missing required 'agent': set caps/mobile.yaml 'rosnav_rl.agent' or pass robot.mobile.agent:=<name>")
-        launch_file = PathJoinSubstitution(
+    def _launch_actions(self, **kwargs: object) -> list[Action]:
+        return nav2_include(self, **kwargs)  # type: ignore[arg-type]
+
+
+def nav2_include(
+    bringup: Bringup,
+    *,
+    use_sim_time: bool = True,
+    frame: str = "",
+    global_planner: str = "navfn",
+    local_planner: str = "regulated_pure_pursuit",
+    inter_planner: str = "default",
+    train_mode: bool = False,
+    arena_env_node: str = "",
+    env_namespace: str = "",
+    sensors: list[SensorSpec] | None = None,
+    params_overlay: str = "",
+    agent: str = "",
+    mapping: str = "static",
+    controller_only: bool = False,
+    **_: object,
+) -> list[Action]:
+    """The Nav2 include of the bringup's robot; controller_only starts only controller_server."""
+    agent_name = agent or str(bringup.robot.caps.mobile.sub("rosnav_rl").get("agent", ""))
+    if local_planner == "rosnav_rl" and not agent_name:
+        raise ValueError(f"nav2 bringup for '{bringup.robot.name}' with local_planner=rosnav_rl missing required 'agent': set caps/mobile.yaml 'rosnav_rl.agent' or pass robot.mobile.agent:=<name>")
+    launch_file = PathJoinSubstitution(
+        [
+            FindPackageShare("arena_robots"),
+            "launch",
+            "adapters",
+            "mobile",
+            "nav2.launch.py",
+        ]
+    )
+    if params_overlay and "/" not in params_overlay:
+        params_overlay = os.path.join(get_package_share_directory("arena_robots"), "config", "nav2", "overlays", f"{params_overlay}.yaml")
+    if params_overlay and not os.path.isfile(params_overlay):
+        raise FileNotFoundError(f"params_overlay {params_overlay!r} does not exist")
+    launch_arguments = {
+        "robot": bringup.robot.name,
+        "namespace": bringup.namespace,
+        "use_sim_time": str(use_sim_time).lower(),
+        "frame": frame,
+        "global_planner": global_planner,
+        "local_planner": local_planner,
+        "inter_planner": inter_planner,
+        "train_mode": str(train_mode).lower(),
+        "arena_env_node": arena_env_node,
+        "env_namespace": env_namespace,
+        "params_overlay": params_overlay,
+        "agent": agent_name,
+        "mapping": mapping,
+        "scan_topic": scan_topic(sensors or [], str(bringup.namespace)),
+        "controller_only": str(bool(controller_only)).lower(),
+    }
+    if sensors is not None:
+        geometry = sensor_geometry(bringup.robot, bringup.parts)
+        launch_arguments["sensors_json"] = json.dumps(
             [
-                FindPackageShare("arena_robots"),
-                "launch",
-                "adapters",
-                "mobile",
-                "nav2.launch.py",
+                {
+                    "name": s.name,
+                    "type": s.type.value if isinstance(s.type, SensorType) else str(s.type),
+                    "topic": s.topic,
+                    "frame": s.frame,
+                    "sensor": s.sensor,
+                    "geometry": attrs.asdict(geometry[s.sensor]) if s.sensor in geometry else None,
+                }
+                for s in sensors
             ]
         )
-        if params_overlay and "/" not in params_overlay:
-            params_overlay = os.path.join(get_package_share_directory("arena_robots"), "config", "nav2", "overlays", f"{params_overlay}.yaml")
-        if params_overlay and not os.path.isfile(params_overlay):
-            raise FileNotFoundError(f"params_overlay {params_overlay!r} does not exist")
-        launch_arguments = {
-            "robot": self.robot.name,
-            "namespace": self.namespace,
-            "use_sim_time": str(use_sim_time).lower(),
-            "frame": frame,
-            "global_planner": global_planner,
-            "local_planner": local_planner,
-            "inter_planner": inter_planner,
-            "train_mode": str(train_mode).lower(),
-            "arena_env_node": arena_env_node,
-            "env_namespace": env_namespace,
-            "params_overlay": params_overlay,
-            "agent": agent_name,
-            "mapping": mapping,
-            "scan_topic": scan_topic(sensors or [], str(self.namespace)),
-        }
-        if sensors is not None:
-            geometry = sensor_geometry(self.robot, self.parts)
-            launch_arguments["sensors_json"] = json.dumps(
-                [
-                    {
-                        "name": s.name,
-                        "type": s.type.value if isinstance(s.type, SensorType) else str(s.type),
-                        "topic": s.topic,
-                        "frame": s.frame,
-                        "sensor": s.sensor,
-                        "geometry": attrs.asdict(geometry[s.sensor]) if s.sensor in geometry else None,
-                    }
-                    for s in sensors
-                ]
-            )
-        return [
-            IncludeLaunchDescription(
-                PythonLaunchDescriptionSource(launch_file),
-                launch_arguments=launch_arguments.items(),
-            )
-        ]
+    return [
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(launch_file),
+            launch_arguments=launch_arguments.items(),
+        )
+    ]
